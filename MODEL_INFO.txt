@@ -1,0 +1,7 @@
+Modell: https://huggingface.co/SopanhaZinII/facial-condition-model
+Datei: finetuned_best.h5
+
+Technischer Hinweis: Der Ansatz lädt ein Keras/TensorFlow-Modell direkt mit
+huggingface_hub. Er nutzt nicht die Transformers/PyTorch-Pipeline aus dem
+Beispiel der Aufgabenstellung. Außerdem sind Bildnormalisierung und genaue
+Klassenreihenfolge in der Modelldokumentation nicht vollständig spezifiziert.
