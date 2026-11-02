@@ -1,1 +1,6 @@
-streamlit==1.41.1\ntensorflow-cpu==2.15.1\nnumpy<2\nPillow\nhuggingface_hub\nh5py\n
+streamlit==1.41.1
+tensorflow-cpu==2.15.1
+numpy<2
+Pillow
+huggingface_hub
+h5py
