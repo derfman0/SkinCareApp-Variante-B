@@ -1,0 +1,5 @@
+WICHTIG: Dateien und Ordner, die mit einem Punkt beginnen (z. B. .gitignore und .streamlit), werden in Windows/macOS oft standardmäßig ausgeblendet.
+Aktiviere im Datei-Explorer 'Ausgeblendete Elemente' bzw. 'Versteckte Dateien anzeigen'.
+Lade anschließend ALLE Dateien und den Ordner .streamlit in das Hauptverzeichnis deines GitHub-Repositories hoch.
+Die Datei .streamlit/secrets.toml ist nur eine lokale Vorlage und soll NICHT auf GitHub hochgeladen werden.
+Streamlit verwendet .streamlit/config.toml. Die Datei .streamlit_config.toml ist zusätzlich enthalten, weil sie in deiner gewünschten Struktur genannt wurde.
