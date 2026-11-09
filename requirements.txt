@@ -1,6 +1,0 @@
-streamlit==1.41.1
-tensorflow-cpu==2.15.1
-numpy<2
-Pillow
-huggingface_hub
-h5py
