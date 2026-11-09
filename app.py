@@ -1,280 +1,242 @@
+"""SkinCareApp - minimalistische Hautanalyse (Variante 2: Hugging Face)."""
+
+import io
+
 import streamlit as st
-import torch
-from PIL import Image, UnidentifiedImageError
-from transformers import AutoImageProcessor, AutoModelForImageClassification
+from PIL import Image, ImageOps, UnidentifiedImageError
 
-# ---------------------------------------------------------
-# SkinCareApp – Hugging Face edition
-# Das Modell wird automatisch von Hugging Face geladen.
-# Es wird KEINE Modelldatei im GitHub-Repository gespeichert.
-# ---------------------------------------------------------
-
-MODEL_ID = "LaurianeMD/vit-skin-disease"
-MAX_UPLOAD_MB = 10
-CONFIDENCE_THRESHOLD = 0.50
-
-st.set_page_config(
-    page_title="SkinCareApp",
-    page_icon="🌸",
-    layout="wide",
-    initial_sidebar_state="expanded",
+# ---------- Einstellungen ----------
+MODEL_ID = "varun1505/face-characteristics"
+MAX_FILE_MB = 5
+CONFIDENCE_THRESHOLD = 0.50  # darunter: "nicht sicher"
+DISCLAIMER = (
+    "SkinCareApp is an educational skincare application. "
+    "It does not provide medical diagnoses or replace professional medical advice."
 )
 
-# Dezentes, Streamlit-freundliches Design
+# Die 7 echten Klassen des Modells -> Namen in der App
+LABEL_MAP = {
+    "acne": "Skin Imperfections",
+    "skin redness": "Redness",
+    "skin pigmentation": "Pigmentation",
+    "skin texture": "Skin Texture",
+    "eyes dark circles": "Dark Circles",
+    "puffy eyes": "Puffy Eyes",
+    "wrinkled face": "Wrinkles",
+}
+NOT_SUPPORTED = ["Visible Pores", "Dry Skin"]
+
+st.set_page_config(page_title="SkinCareApp", page_icon="🌸", layout="centered")
+
 st.markdown(
     """
     <style>
-    .stApp { background: #FBF6F1; color: #4B302B; }
-    h1, h2, h3 { color: #4B302B; }
-    [data-testid="stSidebar"] { background: #F4E8E1; }
-    .hero {
-        background: #F7E7E2; padding: 2rem; border-radius: 18px;
-        border: 1px solid #EBD4CD; margin-bottom: 1rem;
-    }
-    .soft-card {
-        background: #FFFFFF; padding: 1.1rem; border-radius: 15px;
-        border: 1px solid #EADBD4; min-height: 125px;
-    }
-    .note {
-        background: #F7E7E2; padding: 1rem 1.2rem; border-radius: 12px;
-        border: 1px solid #EBD4CD; margin-top: 1rem;
-    }
-    div.stButton > button[kind="primary"] {
-        background: #C87979; color: white; border: 0; border-radius: 12px;
-    }
-    div.stButton > button[kind="primary"]:hover {
-        background: #AE6266; color: white;
-    }
+    #MainMenu, footer {visibility: hidden;}
+    .block-container {padding-top: 2rem; max-width: 720px;}
+    h1, h2, h3 {color: #4A3328; font-weight: 600; letter-spacing: -0.01em;}
+    .card {background: #FFFFFF; border-radius: 18px; padding: 1.1rem 1.3rem;
+           box-shadow: 0 2px 12px rgba(74,51,40,0.07); margin-bottom: 1rem;}
+    .small {color: #8a7468; font-size: 0.85rem;}
+    .stButton > button {border-radius: 999px; border: none; background: #D8A7A0;
+           color: white; padding: 0.5rem 1.5rem; font-weight: 500;}
+    .stButton > button:hover {background: #c8938b; color: white;}
+    .stProgress > div > div > div > div {background-color: #D8A7A0;}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Das Laden ist gecacht: Nach dem ersten Download wird das Modell
-# innerhalb der laufenden App nicht bei jedem Klick neu geladen.
-@st.cache_resource(show_spinner=False)
-def load_model():
-    processor = AutoImageProcessor.from_pretrained(MODEL_ID)
-    model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
-    model.eval()
-    return processor, model
+
+# ---------- Modell ----------
+@st.cache_resource(show_spinner="Loading AI model (first start can take a minute)...")
+def load_classifier():
+    """Lädt das Hugging-Face-Modell einmalig und merkt es sich."""
+    from transformers import pipeline
+
+    return pipeline("image-classification", model=MODEL_ID, top_k=None)
 
 
-def predict(image: Image.Image):
-    processor, model = load_model()
-    image = image.convert("RGB")
-    inputs = processor(images=image, return_tensors="pt")
-    with torch.inference_mode():
-        logits = model(**inputs).logits
-        probabilities = torch.softmax(logits, dim=-1)[0]
-
-    confidence, class_index = torch.max(probabilities, dim=0)
-    label = model.config.id2label[int(class_index.item())]
-    return label, float(confidence.item())
+def classify(image):
+    """Gibt eine Liste (App-Name, Original-Label, Score) zurück, sortiert nach Score."""
+    classifier = load_classifier()
+    results = []
+    for item in classifier(image):
+        original = item["label"]
+        key = original.replace("_", " ").replace("-", " ").strip().lower()
+        results.append((LABEL_MAP.get(key, original), original, float(item["score"])))
+    return sorted(results, key=lambda r: r[2], reverse=True)
 
 
-def show_home():
+# ---------- Bild-Hilfsfunktionen ----------
+def load_valid_image(file):
+    """Prüft Größe und Format. Gibt (Bild, Fehlertext) zurück."""
+    data = file.getvalue()
+    if len(data) > MAX_FILE_MB * 1024 * 1024:
+        return None, f"The file is larger than {MAX_FILE_MB} MB. Please choose a smaller photo."
+    try:
+        Image.open(io.BytesIO(data)).verify()  # prüft, ob die Datei ein echtes Bild ist
+        image = Image.open(io.BytesIO(data))
+        image = ImageOps.exif_transpose(image).convert("RGB")
+        return image, None
+    except (UnidentifiedImageError, OSError, ValueError):
+        return None, "This file could not be read as an image. Please try another photo."
+
+
+def reset_image():
+    """Entfernt das Bild (neue Widget-Keys leeren Upload und Kamera)."""
+    st.session_state.reset_count = st.session_state.get("reset_count", 0) + 1
+    st.session_state.result = None
+
+
+# ---------- Seiten ----------
+def page_analysis():
+    st.subheader("Skin Analysis")
     st.markdown(
-        """
-        <div class="hero">
-          <h1>SkinCareApp</h1>
-          <h3>Discover your skin.</h3>
-          <p>Explore an AI-powered image classification demo and find
-          simple, general skincare information in one place.</p>
-        </div>
-        """,
+        "<p class='small'>Your photo is processed inside this app, is not stored and is not "
+        "sent to any external AI service.</p>",
         unsafe_allow_html=True,
     )
 
-    left, right = st.columns([1.25, 1])
-    with left:
-        st.subheader("A simple space for skincare")
-        st.write(
-            "Upload a photo or take a selfie, then run the pretrained "
-            "Hugging Face image-classification model."
-        )
-        if st.button("Start Skin Analysis →", type="primary", use_container_width=True):
-            st.session_state.page = "Skin Analysis"
-            st.rerun()
-    with right:
+    n = st.session_state.get("reset_count", 0)
+    source = st.radio("Image source", ["Upload from Gallery", "Take a Selfie"],
+                      horizontal=True, label_visibility="collapsed")
+
+    # Nur EINE Quelle ist aktiv, damit nie zwei Bilder gleichzeitig analysiert werden.
+    if source == "Upload from Gallery":
+        file = st.file_uploader("Upload a selfie (JPG, JPEG, PNG)",
+                                type=["jpg", "jpeg", "png"], key=f"upload_{n}")
+    else:
+        st.caption("Your browser will ask for camera permission. "
+                   "If the camera does not work, use the upload instead.")
+        file = st.camera_input("Take a Selfie", key=f"camera_{n}")
+
+    if file is None:
+        return
+
+    image, error = load_valid_image(file)
+    if error:
+        st.error(error)
+        return
+
+    st.image(image)
+    col1, col2 = st.columns(2)
+    col1.button("Remove Image", on_click=reset_image)
+    analyze = col2.button("Analyze My Skin")
+
+    if analyze:
+        try:
+            with st.spinner("Analyzing your skin..."):
+                st.session_state.result = classify(image)
+        except Exception:  # absichtlich allgemein: keine Bilddaten in Fehlermeldungen
+            st.session_state.result = None
+            st.error("The AI model could not be loaded or run. Please try again later.")
+
+    if st.session_state.get("result"):
+        show_results(st.session_state.result)
+
+
+def show_results(results):
+    st.subheader("Results")
+    top_name, _, top_score = results[0]
+
+    if top_score < CONFIDENCE_THRESHOLD:
+        st.warning("We couldn't confidently analyze this image. Please try another photo.")
         st.markdown(
-            """
-            <div class="soft-card">
-              <h3>🌸 Your skincare space</h3>
-              <p>AI image classification</p>
-              <p>General skincare tips</p>
-              <p>Morning & evening routine</p>
-            </div>
-            """,
+            f"<p class='small'>Category: Unclear / No Detection "
+            f"(highest model confidence {top_score:.0%}, threshold {CONFIDENCE_THRESHOLD:.0%}).</p>",
             unsafe_allow_html=True,
-        )
-
-    st.markdown(
-        '<div class="note"><b>Important:</b> This is an educational project, '
-        'not a medical tool. It does not diagnose skin conditions.</div>',
-        unsafe_allow_html=True,
-    )
-
-
-def show_analysis():
-    st.title("Skin Analysis")
-    st.write("Choose one image source. The selected image is processed for this analysis.")
-
-    source = st.radio(
-        "Choose image source",
-        ["Upload from gallery", "Take a selfie"],
-        horizontal=True,
-    )
-
-    image_file = None
-    if source == "Upload from gallery":
-        image_file = st.file_uploader(
-            "Choose a JPG, JPEG or PNG image",
-            type=["jpg", "jpeg", "png"],
         )
     else:
-        image_file = st.camera_input("Take a selfie")
-
-    if image_file is None:
-        st.info("Upload an image or take a selfie to continue.")
-        return
-
-    if image_file.size > MAX_UPLOAD_MB * 1024 * 1024:
-        st.error(f"Please choose an image smaller than {MAX_UPLOAD_MB} MB.")
-        return
-
-    try:
-        image = Image.open(image_file)
-        image.verify()
-        image_file.seek(0)
-        image = Image.open(image_file).convert("RGB")
-    except (UnidentifiedImageError, OSError, ValueError):
-        st.error("This file could not be opened as a valid image. Please try another one.")
-        return
-
-    st.subheader("Image preview")
-    st.image(image, use_container_width=True)
-
-    if st.button("Analyze My Image", type="primary", use_container_width=True):
-        # Vorherige Ergebnisse entfernen, damit kein altes Ergebnis stehen bleibt.
-        st.session_state.pop("prediction", None)
-        with st.spinner("Loading the model and analyzing the image..."):
-            try:
-                label, confidence = predict(image)
-                st.session_state.prediction = {
-                    "label": label,
-                    "confidence": confidence,
-                }
-            except Exception as exc:
-                st.error(
-                    "The model could not analyze this image. "
-                    "Check your internet connection and try again."
-                )
-                st.caption(f"Technical detail: {type(exc).__name__}: {exc}")
-
-    result = st.session_state.get("prediction")
-    if result:
-        st.divider()
-        st.subheader("Analysis result")
-        if result["confidence"] < CONFIDENCE_THRESHOLD:
-            st.warning(
-                "The model's confidence is low. Please do not interpret this "
-                "prediction as a reliable result."
-            )
         st.markdown(
-            f'<div class="soft-card"><h3>{result["label"]}</h3>'
-            f'<p>Predicted model class</p></div>',
-            unsafe_allow_html=True,
-        )
-        st.write(f"Model confidence: **{result['confidence'] * 100:.1f}%**")
-        st.progress(result["confidence"])
-        st.caption(
-            "The confidence is the model's softmax score, not the probability "
-            "that a medical condition is present."
-        )
-        st.markdown(
-            '<div class="note"><b>Model limitation:</b> This pretrained model '
-            'classifies dermatology-related image classes. It was not trained '
-            'to independently detect the SkinCareApp categories such as visible '
-            'pores, dry skin, redness or pigmentation. The result is not a diagnosis.</div>',
+            f"<div class='card'><b>Most likely visible feature:</b> {top_name}<br>"
+            f"<span class='small'>Model confidence: {top_score:.0%}. The model picks "
+            f"<u>one</u> category per image; it does not detect several features at once.</span></div>",
             unsafe_allow_html=True,
         )
 
+    st.markdown("**All model confidences**")
+    for name, _, score in results:
+        st.progress(min(max(score, 0.0), 1.0), text=f"{name}: {score:.0%}")
 
-def show_guide():
-    st.title("Skincare Guide")
-    st.write("General information only. Keep routines gentle and avoid products that irritate your skin.")
-    tips = {
-        "Gentle cleansing": "Use a mild cleanser and avoid scrubbing aggressively.",
-        "Moisturizing": "A suitable moisturizer can help support the skin barrier.",
-        "Sun protection": "Use broad-spectrum sunscreen during the day, following its instructions.",
-        "Sensitive-feeling skin": "Introduce new products gradually and stop using products that cause irritation.",
+    st.markdown(
+        f"<p class='small'>Not detected by this model: {', '.join(NOT_SUPPORTED)}. "
+        "Confidence values are the model's own output, not a medical measure.</p>",
+        unsafe_allow_html=True,
+    )
+
+
+def page_guide():
+    st.subheader("Skincare Guide")
+    st.caption("General information only. No medical advice, no guaranteed results.")
+    topics = {
+        "Skin Imperfections": "Cleanse gently twice a day with a mild cleanser. Avoid squeezing or "
+                              "scrubbing, as this can irritate the skin. Choose non-comedogenic products.",
+        "Redness": "Use fragrance-free, mild products. Avoid known irritants such as harsh scrubs and "
+                   "very hot water. Keep your routine simple. Persistent redness: ask a doctor.",
+        "Pigmentation": "Daily sun protection (SPF 30+) is the most important habit, as sun can darken "
+                        "spots. Be patient and consistent. New or changing spots: see a doctor.",
+        "Skin Texture": "Gentle cleansing and regular moisturizer help skin feel smooth. Avoid "
+                        "over-exfoliating, which can irritate the skin barrier.",
+        "Dark Circles": "Enough sleep, sun protection and a gentle moisturizer for the eye area can help. "
+                        "Dark circles are often genetic.",
+        "Puffy Eyes": "Sleep, hydration and less salty food can help. A cool compress may feel "
+                      "refreshing. Persistent swelling: ask a doctor.",
+        "Wrinkles": "Daily sunscreen and moisturizer are the basics for healthy-looking skin. "
+                    "Wrinkles are a natural part of aging.",
+        "Visible Pores (not detected by the AI)": "Pore size is mostly genetic. Gentle cleansing and "
+                                                  "a light moisturizer keep skin looking even.",
+        "Dry Skin (not detected by the AI)": "Moisturize regularly, ideally on slightly damp skin. Use a "
+                                             "mild cleanser and lukewarm water to support the skin barrier.",
     }
-    for heading, body in tips.items():
-        with st.expander(heading):
-            st.write(body)
+    for title, text in topics.items():
+        with st.expander(title):
+            st.write(text)
 
 
-def show_routine():
-    st.title("My Skincare Routine")
-    morning, evening = st.columns(2)
-    with morning:
-        st.subheader("☀️ Morning")
-        st.markdown("1. Gentle cleanse (if needed)\n\n2. Moisturizer\n\n3. Sunscreen")
-    with evening:
-        st.subheader("🌙 Evening")
-        st.markdown("1. Gentle cleanse\n\n2. Optional gentle care\n\n3. Moisturizer")
+def page_routine():
+    st.subheader("My Skincare Routine")
+    morning = [("Cleanse", "Wash your face gently with a mild cleanser."),
+               ("Moisturize", "Apply a moisturizer suited to your skin."),
+               ("Sun Protection", "Finish with sunscreen, SPF 30 or higher.")]
+    evening = [("Cleanse", "Clean your face and remove sunscreen."),
+               ("Optional Care", "Add a mild, gentle product if you like."),
+               ("Moisturize", "Apply moisturizer.")]
+    for heading, steps in (("☀️ Morning", morning), ("🌙 Evening", evening)):
+        st.markdown(f"**{heading}**")
+        for i, (title, text) in enumerate(steps, 1):
+            st.markdown(
+                f"<div class='card'><b>Step {i} - {title}</b><br>"
+                f"<span class='small'>{text}</span></div>",
+                unsafe_allow_html=True,
+            )
 
 
-def show_about():
-    st.title("About & Privacy")
-    st.write(
-        "SkinCareApp is a school project demonstrating how a pretrained "
-        "image-classification model can be connected to a Streamlit application."
-    )
-    st.subheader("About the AI model")
-    st.write(f"Model repository: `{MODEL_ID}`")
-    st.write(
-        "The model files are downloaded from Hugging Face when the app loads. "
-        "They are not included in this GitHub repository."
-    )
-    st.subheader("Privacy")
-    st.write(
-        "This code does not intentionally save uploaded photos to a project folder "
-        "or database. However, the image is sent to the app's server for inference. "
-        "The app uses a model downloaded from Hugging Face; it does not call the "
-        "Hugging Face hosted inference API in this implementation."
-    )
-    st.info(
-        "Do not upload sensitive or identifiable photos unless you understand "
-        "the hosting and data-processing arrangements of the deployed app."
-    )
-    st.caption(
-        "SkinCareApp is an educational skincare application. It does not provide "
-        "medical diagnoses or replace professional medical advice."
-    )
+def page_about():
+    st.subheader("About & Privacy")
+    st.write("SkinCareApp is a school project. It uses a pretrained AI model from Hugging Face "
+             f"(`{MODEL_ID}`) to classify a selfie into one visible skin-feature category.")
+    st.markdown("**Limits of the model**")
+    st.write("It assigns one category per image, reports a self-stated accuracy of about 57 %, and "
+             "does not detect Dry Skin or Visible Pores. Results can be wrong.")
+    st.markdown("**Privacy**")
+    st.write("Photos are processed in memory only, are not saved and are not sent to external AI "
+             "services. Use 'Remove Image' to delete the current photo from the app.")
+    st.info(DISCLAIMER)
 
 
-# Navigation
-if "page" not in st.session_state:
-    st.session_state.page = "Home"
+# ---------- Start ----------
+st.title("🌸 SkinCareApp")
+st.caption("Gentle, AI-assisted insights into visible skin features.")
 
-st.sidebar.title("🌸 SkinCareApp")
-page_names = ["Home", "Skin Analysis", "Skincare Guide", "My Routine", "About & Privacy"]
-selected = st.sidebar.radio(
-    "Navigation",
-    page_names,
-    index=page_names.index(st.session_state.page),
-)
-st.session_state.page = selected
+tab_analysis, tab_guide, tab_routine, tab_about = st.tabs(
+    ["Analysis", "Skincare Guide", "Routine", "About & Privacy"])
+with tab_analysis:
+    page_analysis()
+with tab_guide:
+    page_guide()
+with tab_routine:
+    page_routine()
+with tab_about:
+    page_about()
 
-if selected == "Home":
-    show_home()
-elif selected == "Skin Analysis":
-    show_analysis()
-elif selected == "Skincare Guide":
-    show_guide()
-elif selected == "My Routine":
-    show_routine()
-else:
-    show_about()
+st.markdown(f"<p class='small'>{DISCLAIMER}</p>", unsafe_allow_html=True)
