@@ -1,7 +1,9 @@
 """SkinCareApp - minimalistische Hautanalyse (Variante 2: Hugging Face)."""
 
 import io
+from datetime import datetime
 
+import numpy as np
 import streamlit as st
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -10,21 +12,83 @@ MODEL_ID = "varun1505/face-characteristics"
 MAX_FILE_MB = 5
 CONFIDENCE_THRESHOLD = 0.50  # darunter: "nicht sicher"
 DISCLAIMER = (
-    "SkinCareApp is an educational skincare application. "
-    "It does not provide medical diagnoses or replace professional medical advice."
+    "Die SkinCareApp ist eine Lern-App zur Hautpflege. "
+    "Sie stellt keine medizinische Diagnose und ersetzt keine ärztliche Beratung."
 )
 
-# Die 7 echten Klassen des Modells -> Namen in der App
+# Die 7 echten Klassen des Modells -> deutsche Namen
 LABEL_MAP = {
-    "acne": "Skin Imperfections",
-    "skin redness": "Redness",
-    "skin pigmentation": "Pigmentation",
-    "skin texture": "Skin Texture",
-    "eyes dark circles": "Dark Circles",
-    "puffy eyes": "Puffy Eyes",
-    "wrinkled face": "Wrinkles",
+    "acne": "Hautunreinheiten",
+    "skin redness": "Rötungen",
+    "skin pigmentation": "Pigmentierung",
+    "skin texture": "Hautstruktur",
+    "eyes dark circles": "Augenringe",
+    "puffy eyes": "Geschwollene Augen",
+    "wrinkled face": "Falten",
 }
-NOT_SUPPORTED = ["Visible Pores", "Dry Skin"]
+NOT_SUPPORTED = ["Poren", "Trockene Haut"]
+
+# Erklärung und Pflegetipps zu jedem Merkmal (allgemeine Informationen)
+CARE = {
+    "Hautunreinheiten": (
+        "Sichtbare Unreinheiten wie Pickel oder Mitesser.",
+        ["Zweimal täglich sanft reinigen, nicht schrubben.",
+         "Nicht ausdrücken, das kann Reizungen und Narben fördern.",
+         "Produkte wählen, die als 'nicht komedogen' gekennzeichnet sind.",
+         "Bei starken oder schmerzhaften Unreinheiten: Hautarzt fragen."]),
+    "Rötungen": (
+        "Sichtbare Rötungen der Haut.",
+        ["Milde, parfümfreie Produkte verwenden.",
+         "Sehr heißes Wasser und grobe Peelings meiden.",
+         "Die Pflegeroutine einfach halten.",
+         "Bei anhaltender Rötung: Hautarzt fragen."]),
+    "Pigmentierung": (
+        "Sichtbare dunklere Flecken auf der Haut.",
+        ["Täglich Sonnenschutz (mindestens LSF 30) verwenden.",
+         "Geduld haben: Hautveränderungen brauchen Zeit.",
+         "Neue oder sich verändernde Flecken immer ärztlich anschauen lassen."]),
+    "Hautstruktur": (
+        "Eine auffällige Oberflächenstruktur der Haut.",
+        ["Sanft reinigen und regelmäßig eincremen.",
+         "Nicht zu oft peelen, das reizt die Hautbarriere.",
+         "Täglich Sonnenschutz verwenden."]),
+    "Augenringe": (
+        "Dunkle Schatten unter den Augen. Sie sind oft erblich bedingt.",
+        ["Ausreichend schlafen.",
+         "Sonnenschutz und eine milde Augenpflege verwenden.",
+         "Ein kühles Tuch kann sich erfrischend anfühlen."]),
+    "Geschwollene Augen": (
+        "Sichtbare Schwellungen im Augenbereich.",
+        ["Genug trinken und ausreichend schlafen.",
+         "Ein kühles Tuch kann helfen.",
+         "Bei dauerhaften Schwellungen: Arzt fragen."]),
+    "Falten": (
+        "Sichtbare Linien und Falten. Sie gehören zum natürlichen Altern.",
+        ["Täglich Sonnenschutz ist die wichtigste Basis.",
+         "Regelmäßig Feuchtigkeitspflege verwenden.",
+         "Kein Produkt kann Falten garantiert entfernen."]),
+}
+
+# Einfache Stichwortliste für den Inhaltsstoffe-Check
+INGREDIENTS = {
+    "parfum": ("⚠️", "Duftstoff: kann empfindliche Haut reizen."),
+    "fragrance": ("⚠️", "Duftstoff: kann empfindliche Haut reizen."),
+    "limonene": ("⚠️", "Duftstoff-Allergen: kann bei empfindlicher Haut reizen."),
+    "linalool": ("⚠️", "Duftstoff-Allergen: kann bei empfindlicher Haut reizen."),
+    "alcohol denat": ("⚠️", "Vergällter Alkohol: kann austrocknen und reizen."),
+    "sodium lauryl sulfate": ("⚠️", "Starkes Reinigungsmittel: kann die Haut austrocknen."),
+    "menthol": ("⚠️", "Kann bei empfindlicher Haut reizen."),
+    "retinol": ("ℹ️", "Starker Wirkstoff: langsam einführen, Sonnenschutz nutzen, "
+                      "in der Schwangerschaft ärztlich klären."),
+    "salicylic acid": ("ℹ️", "Säure (BHA): kann bei Unreinheiten genutzt werden, "
+                             "aber auch reizen. Vorsichtig dosieren."),
+    "glycolic acid": ("ℹ️", "Säure (AHA): macht die Haut sonnenempfindlicher. Sonnenschutz nutzen."),
+    "niacinamide": ("✅", "Wird meist gut vertragen."),
+    "glycerin": ("✅", "Feuchtigkeitsspendend."),
+    "hyaluronic": ("✅", "Feuchtigkeitsspendend."),
+    "ceramide": ("✅", "Unterstützt die Hautbarriere."),
+    "panthenol": ("✅", "Beruhigend und feuchtigkeitsspendend."),
+}
 
 st.set_page_config(page_title="SkinCareApp", page_icon="🌸", layout="centered")
 
@@ -48,22 +112,32 @@ st.markdown(
 
 
 # ---------- Modell ----------
-@st.cache_resource(show_spinner="Loading AI model (first start can take a minute)...")
-def load_classifier():
-    """Lädt das Hugging-Face-Modell einmalig und merkt es sich."""
-    from transformers import pipeline
+@st.cache_resource(show_spinner="KI-Modell wird geladen (der erste Start kann etwas dauern) ...")
+def load_model():
+    """Lädt Bildprozessor und Modell einmalig und merkt sie sich."""
+    from transformers import AutoImageProcessor, AutoModelForImageClassification
 
-    return pipeline("image-classification", model=MODEL_ID, top_k=None)
+    processor = AutoImageProcessor.from_pretrained(MODEL_ID)
+    model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
+    model.eval()
+    return processor, model
 
 
 def classify(image):
-    """Gibt eine Liste (App-Name, Original-Label, Score) zurück, sortiert nach Score."""
-    classifier = load_classifier()
+    """Gibt eine Liste (deutscher Name, Original-Label, Score) zurück, sortiert nach Score."""
+    import torch
+
+    processor, model = load_model()
+    inputs = processor(images=image, return_tensors="pt")
+    with torch.no_grad():
+        logits = model(**inputs).logits
+    probabilities = torch.softmax(logits, dim=-1)[0]
+
     results = []
-    for item in classifier(image):
-        original = item["label"]
+    for index, score in enumerate(probabilities.tolist()):
+        original = model.config.id2label[index]
         key = original.replace("_", " ").replace("-", " ").strip().lower()
-        results.append((LABEL_MAP.get(key, original), original, float(item["score"])))
+        results.append((LABEL_MAP.get(key, original), original, float(score)))
     return sorted(results, key=lambda r: r[2], reverse=True)
 
 
@@ -72,14 +146,33 @@ def load_valid_image(file):
     """Prüft Größe und Format. Gibt (Bild, Fehlertext) zurück."""
     data = file.getvalue()
     if len(data) > MAX_FILE_MB * 1024 * 1024:
-        return None, f"The file is larger than {MAX_FILE_MB} MB. Please choose a smaller photo."
+        return None, f"Die Datei ist größer als {MAX_FILE_MB} MB. Bitte wähle ein kleineres Foto."
     try:
-        Image.open(io.BytesIO(data)).verify()  # prüft, ob die Datei ein echtes Bild ist
+        Image.open(io.BytesIO(data)).verify()  # prüft, ob es ein echtes Bild ist
         image = Image.open(io.BytesIO(data))
         image = ImageOps.exif_transpose(image).convert("RGB")
         return image, None
     except (UnidentifiedImageError, OSError, ValueError):
-        return None, "This file could not be read as an image. Please try another photo."
+        return None, "Diese Datei konnte nicht als Bild gelesen werden. Bitte versuche ein anderes Foto."
+
+
+def check_photo_quality(image):
+    """Grobe Prüfung von Helligkeit und Schärfe. Gibt eine Liste von Hinweisen zurück."""
+    gray = np.asarray(image.convert("L").resize((256, 256)), dtype=float)
+    brightness = gray.mean()
+    # Schärfe: Varianz der Kantenstärke (Laplace-Filter)
+    laplace = (-4 * gray[1:-1, 1:-1] + gray[:-2, 1:-1] + gray[2:, 1:-1]
+               + gray[1:-1, :-2] + gray[1:-1, 2:])
+    sharpness = laplace.var()
+
+    hints = []
+    if brightness < 70:
+        hints.append("Das Foto ist ziemlich dunkel. Nimm es bei Tageslicht auf.")
+    if brightness > 200:
+        hints.append("Das Foto ist sehr hell. Vermeide direktes, grelles Licht.")
+    if sharpness < 30:
+        hints.append("Das Foto wirkt unscharf. Halte die Kamera ruhig.")
+    return hints
 
 
 def reset_image():
@@ -88,27 +181,43 @@ def reset_image():
     st.session_state.result = None
 
 
+def build_report(results):
+    """Erstellt einen Textbericht (ohne Foto)."""
+    top_name, _, top_score = results[0]
+    lines = [
+        "SkinCareApp - Analysebericht",
+        datetime.now().strftime("Datum: %d.%m.%Y %H:%M"),
+        "",
+        f"Wahrscheinlichstes Merkmal: {top_name} ({top_score:.0%})",
+        "",
+        "Alle Modellwerte:",
+    ]
+    lines += [f"- {name}: {score:.0%}" for name, _, score in results]
+    lines += ["", f"Modell: {MODEL_ID}", DISCLAIMER]
+    return "\n".join(lines)
+
+
 # ---------- Seiten ----------
 def page_analysis():
-    st.subheader("Skin Analysis")
+    st.subheader("Hautanalyse")
     st.markdown(
-        "<p class='small'>Your photo is processed inside this app, is not stored and is not "
-        "sent to any external AI service.</p>",
+        "<p class='small'>Dein Foto wird nur in dieser App verarbeitet, nicht gespeichert "
+        "und nicht an einen externen KI-Dienst gesendet.</p>",
         unsafe_allow_html=True,
     )
 
     n = st.session_state.get("reset_count", 0)
-    source = st.radio("Image source", ["Upload from Gallery", "Take a Selfie"],
+    source = st.radio("Bildquelle", ["Foto hochladen", "Selfie aufnehmen"],
                       horizontal=True, label_visibility="collapsed")
 
     # Nur EINE Quelle ist aktiv, damit nie zwei Bilder gleichzeitig analysiert werden.
-    if source == "Upload from Gallery":
-        file = st.file_uploader("Upload a selfie (JPG, JPEG, PNG)",
+    if source == "Foto hochladen":
+        file = st.file_uploader("Selfie hochladen (JPG, JPEG, PNG)",
                                 type=["jpg", "jpeg", "png"], key=f"upload_{n}")
     else:
-        st.caption("Your browser will ask for camera permission. "
-                   "If the camera does not work, use the upload instead.")
-        file = st.camera_input("Take a Selfie", key=f"camera_{n}")
+        st.caption("Dein Browser fragt nach der Erlaubnis für die Kamera. "
+                   "Falls die Kamera nicht funktioniert, nutze den Foto-Upload.")
+        file = st.camera_input("Selfie aufnehmen", key=f"camera_{n}")
 
     if file is None:
         return
@@ -119,124 +228,180 @@ def page_analysis():
         return
 
     st.image(image)
+    for hint in check_photo_quality(image):
+        st.warning(hint)
+
     col1, col2 = st.columns(2)
-    col1.button("Remove Image", on_click=reset_image)
-    analyze = col2.button("Analyze My Skin")
+    col1.button("Bild entfernen", on_click=reset_image)
+    analyze = col2.button("Haut analysieren")
 
     if analyze:
         try:
-            with st.spinner("Analyzing your skin..."):
-                st.session_state.result = classify(image)
-        except Exception:  # absichtlich allgemein: keine Bilddaten in Fehlermeldungen
+            with st.spinner("Deine Haut wird analysiert ..."):
+                results = classify(image)
+            st.session_state.result = results
+            history = st.session_state.get("history", [])
+            history.append({"Zeit": datetime.now().strftime("%H:%M:%S"),
+                            "Ergebnis": results[0][0],
+                            "Sicherheit": f"{results[0][2]:.0%}"})
+            st.session_state.history = history
+        except Exception as error_info:  # absichtlich allgemein; keine Bilddaten im Text
             st.session_state.result = None
-            st.error("The AI model could not be loaded or run. Please try again later.")
+            st.error("Das KI-Modell konnte nicht geladen oder ausgeführt werden. "
+                     "Bitte versuche es später noch einmal.")
+            with st.expander("Technische Details"):
+                st.code(f"{type(error_info).__name__}: {error_info}")
 
     if st.session_state.get("result"):
         show_results(st.session_state.result)
 
 
 def show_results(results):
-    st.subheader("Results")
+    st.subheader("Ergebnis")
     top_name, _, top_score = results[0]
 
     if top_score < CONFIDENCE_THRESHOLD:
-        st.warning("We couldn't confidently analyze this image. Please try another photo.")
+        st.warning("Wir konnten dieses Bild nicht sicher auswerten. Bitte versuche ein anderes Foto.")
         st.markdown(
-            f"<p class='small'>Category: Unclear / No Detection "
-            f"(highest model confidence {top_score:.0%}, threshold {CONFIDENCE_THRESHOLD:.0%}).</p>",
+            f"<p class='small'>Kategorie: Unklar / keine Erkennung "
+            f"(höchster Modellwert {top_score:.0%}, Schwelle {CONFIDENCE_THRESHOLD:.0%}).</p>",
             unsafe_allow_html=True,
         )
     else:
+        explanation, tips = CARE.get(top_name, ("", []))
         st.markdown(
-            f"<div class='card'><b>Most likely visible feature:</b> {top_name}<br>"
-            f"<span class='small'>Model confidence: {top_score:.0%}. The model picks "
-            f"<u>one</u> category per image; it does not detect several features at once.</span></div>",
+            f"<div class='card'><b>Wahrscheinlichstes sichtbares Merkmal:</b> {top_name}<br>"
+            f"<span class='small'>{explanation} Sicherheit des Modells: {top_score:.0%}. "
+            f"Das Modell wählt <u>eine</u> Kategorie pro Bild und erkennt nicht mehrere "
+            f"Merkmale gleichzeitig.</span></div>",
             unsafe_allow_html=True,
         )
+        if tips:
+            st.markdown("**Allgemeine Pflegetipps**")
+            for tip in tips:
+                st.markdown(f"- {tip}")
 
-    st.markdown("**All model confidences**")
+    st.markdown("**Alle Modellwerte**")
     for name, _, score in results:
         st.progress(min(max(score, 0.0), 1.0), text=f"{name}: {score:.0%}")
 
     st.markdown(
-        f"<p class='small'>Not detected by this model: {', '.join(NOT_SUPPORTED)}. "
-        "Confidence values are the model's own output, not a medical measure.</p>",
+        f"<p class='small'>Von diesem Modell nicht erkannt: {', '.join(NOT_SUPPORTED)}. "
+        "Die Werte sind die Ausgabe des Modells und kein medizinisches Maß.</p>",
         unsafe_allow_html=True,
     )
+    st.download_button("Bericht herunterladen (ohne Foto)", build_report(results),
+                       file_name="skincare_bericht.txt")
 
 
-def page_guide():
-    st.subheader("Skincare Guide")
-    st.caption("General information only. No medical advice, no guaranteed results.")
-    topics = {
-        "Skin Imperfections": "Cleanse gently twice a day with a mild cleanser. Avoid squeezing or "
-                              "scrubbing, as this can irritate the skin. Choose non-comedogenic products.",
-        "Redness": "Use fragrance-free, mild products. Avoid known irritants such as harsh scrubs and "
-                   "very hot water. Keep your routine simple. Persistent redness: ask a doctor.",
-        "Pigmentation": "Daily sun protection (SPF 30+) is the most important habit, as sun can darken "
-                        "spots. Be patient and consistent. New or changing spots: see a doctor.",
-        "Skin Texture": "Gentle cleansing and regular moisturizer help skin feel smooth. Avoid "
-                        "over-exfoliating, which can irritate the skin barrier.",
-        "Dark Circles": "Enough sleep, sun protection and a gentle moisturizer for the eye area can help. "
-                        "Dark circles are often genetic.",
-        "Puffy Eyes": "Sleep, hydration and less salty food can help. A cool compress may feel "
-                      "refreshing. Persistent swelling: ask a doctor.",
-        "Wrinkles": "Daily sunscreen and moisturizer are the basics for healthy-looking skin. "
-                    "Wrinkles are a natural part of aging.",
-        "Visible Pores (not detected by the AI)": "Pore size is mostly genetic. Gentle cleansing and "
-                                                  "a light moisturizer keep skin looking even.",
-        "Dry Skin (not detected by the AI)": "Moisturize regularly, ideally on slightly damp skin. Use a "
-                                             "mild cleanser and lukewarm water to support the skin barrier.",
-    }
-    for title, text in topics.items():
-        with st.expander(title):
-            st.write(text)
+def page_history():
+    st.subheader("Verlauf")
+    st.caption("Nur für diese Sitzung. Es werden keine Fotos gespeichert.")
+    history = st.session_state.get("history", [])
+    if not history:
+        st.info("Noch keine Analyse in dieser Sitzung.")
+        return
+    st.table(history)
+    if st.button("Verlauf löschen"):
+        st.session_state.history = []
+        st.rerun()
 
 
-def page_routine():
-    st.subheader("My Skincare Routine")
-    morning = [("Cleanse", "Wash your face gently with a mild cleanser."),
-               ("Moisturize", "Apply a moisturizer suited to your skin."),
-               ("Sun Protection", "Finish with sunscreen, SPF 30 or higher.")]
-    evening = [("Cleanse", "Clean your face and remove sunscreen."),
-               ("Optional Care", "Add a mild, gentle product if you like."),
-               ("Moisturize", "Apply moisturizer.")]
-    for heading, steps in (("☀️ Morning", morning), ("🌙 Evening", evening)):
-        st.markdown(f"**{heading}**")
-        for i, (title, text) in enumerate(steps, 1):
-            st.markdown(
-                f"<div class='card'><b>Step {i} - {title}</b><br>"
-                f"<span class='small'>{text}</span></div>",
-                unsafe_allow_html=True,
-            )
+def page_quiz():
+    st.subheader("Hauttyp-Quiz")
+    st.caption("Zwei Fragen für allgemeine Hinweise. Keine Diagnose.")
+
+    sun = st.radio(
+        "Wie reagiert deine Haut auf Sonne ohne Schutz?",
+        ["Verbrennt schnell, bräunt kaum",
+         "Verbrennt oft, bräunt langsam",
+         "Verbrennt manchmal, bräunt gut",
+         "Verbrennt selten, bräunt schnell"],
+        index=None,
+    )
+    feel = st.radio(
+        "Wie fühlt sich deine Haut mittags an?",
+        ["Spannt oder fühlt sich trocken an",
+         "Normal und angenehm",
+         "Glänzt, vor allem an Stirn und Nase"],
+        index=None,
+    )
+
+    if sun is None or feel is None:
+        return
+
+    st.markdown("**Deine Hinweise**")
+    if sun in ("Verbrennt schnell, bräunt kaum", "Verbrennt oft, bräunt langsam"):
+        st.write("☀️ Deine Haut ist sonnenempfindlich: Nutze täglich Sonnenschutz mit LSF 50, "
+                 "meide die Mittagssonne und creme bei Bedarf nach.")
+    else:
+        st.write("☀️ Auch bei weniger sonnenempfindlicher Haut gilt: Täglich Sonnenschutz "
+                 "mit mindestens LSF 30 schützt vor Hautschäden.")
+
+    if feel.startswith("Spannt"):
+        st.write("💧 Trockene Tendenz: Milde Reinigung, lauwarmes Wasser und eine reichhaltigere "
+                 "Feuchtigkeitscreme können helfen.")
+    elif feel.startswith("Normal"):
+        st.write("💧 Normale Haut: Sanft reinigen, eincremen und Sonnenschutz genügen meist.")
+    else:
+        st.write("💧 Ölige Tendenz: Leichte, nicht komedogene Pflege (z. B. Gel-Creme) passt oft gut. "
+                 "Trotzdem eincremen, auch fettige Haut braucht Feuchtigkeit.")
+    st.markdown(f"<p class='small'>{DISCLAIMER}</p>", unsafe_allow_html=True)
+
+
+def page_ingredients():
+    st.subheader("Inhaltsstoffe-Check")
+    st.caption("Füge die Zutatenliste (INCI) eines Pflegeprodukts ein.")
+    text = st.text_area("Zutatenliste", height=150,
+                        placeholder="Aqua, Glycerin, Parfum, Alcohol Denat., Niacinamide ...")
+    if not text.strip():
+        return
+
+    lowered = text.lower()
+    found = []
+    shown = set()
+    for keyword, (icon, note) in INGREDIENTS.items():
+        if keyword in lowered and (icon, note) not in shown:
+            shown.add((icon, note))
+            found.append((keyword, icon, note))
+
+    if not found:
+        st.info("Keine Stoffe aus unserer kleinen Liste gefunden. Das heißt nicht, "
+                "dass das Produkt für dich passend ist.")
+    for keyword, icon, note in found:
+        st.markdown(f"{icon} **{keyword.title()}**: {note}")
+    st.markdown("<p class='small'>⚠️ möglicher Reizstoff · ℹ️ Wirkstoff mit Hinweisen · ✅ pflegend. "
+                "Das ist nur eine einfache Stichwortliste und keine Bewertung der Verträglichkeit.</p>",
+                unsafe_allow_html=True)
 
 
 def page_about():
-    st.subheader("About & Privacy")
-    st.write("SkinCareApp is a school project. It uses a pretrained AI model from Hugging Face "
-             f"(`{MODEL_ID}`) to classify a selfie into one visible skin-feature category.")
-    st.markdown("**Limits of the model**")
-    st.write("It assigns one category per image, reports a self-stated accuracy of about 57 %, and "
-             "does not detect Dry Skin or Visible Pores. Results can be wrong.")
-    st.markdown("**Privacy**")
-    st.write("Photos are processed in memory only, are not saved and are not sent to external AI "
-             "services. Use 'Remove Image' to delete the current photo from the app.")
+    st.subheader("Info & Datenschutz")
+    st.write("Die SkinCareApp ist ein Schulprojekt. Sie nutzt ein vortrainiertes KI-Modell von "
+             f"Hugging Face (`{MODEL_ID}`), das ein Selfie einer sichtbaren Hautmerkmal-Kategorie zuordnet.")
+    st.markdown("**Grenzen des Modells**")
+    st.write("Es wählt nur eine Kategorie pro Bild, gibt eine selbst angegebene Genauigkeit von "
+             "etwa 57 % an und erkennt keine Poren und keine trockene Haut. Ergebnisse können falsch sein.")
+    st.markdown("**Datenschutz**")
+    st.write("Fotos werden nur im Arbeitsspeicher verarbeitet, nicht gespeichert und nicht an externe "
+             "KI-Dienste gesendet. Mit „Bild entfernen“ löschst du das aktuelle Foto aus der App.")
     st.info(DISCLAIMER)
 
 
 # ---------- Start ----------
 st.title("🌸 SkinCareApp")
-st.caption("Gentle, AI-assisted insights into visible skin features.")
+st.caption("Sanfte, KI-gestützte Einblicke in sichtbare Hautmerkmale.")
 
-tab_analysis, tab_guide, tab_routine, tab_about = st.tabs(
-    ["Analysis", "Skincare Guide", "Routine", "About & Privacy"])
-with tab_analysis:
+tabs = st.tabs(["Analyse", "Verlauf", "Hauttyp-Quiz", "Inhaltsstoffe", "Info"])
+with tabs[0]:
     page_analysis()
-with tab_guide:
-    page_guide()
-with tab_routine:
-    page_routine()
-with tab_about:
+with tabs[1]:
+    page_history()
+with tabs[2]:
+    page_quiz()
+with tabs[3]:
+    page_ingredients()
+with tabs[4]:
     page_about()
 
 st.markdown(f"<p class='small'>{DISCLAIMER}</p>", unsafe_allow_html=True)
