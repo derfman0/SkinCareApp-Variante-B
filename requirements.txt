@@ -1,7 +1,9 @@
+```text
 --extra-index-url https://download.pytorch.org/whl/cpu
-streamlit>=1.40
-transformers>=4.44
+streamlit>=1.40,<2.0
+transformers==4.44.2
 torch
 torchvision
 pillow
 numpy
+```
