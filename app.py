@@ -1,4 +1,4 @@
-"""SkinCareApp - minimalistische Hautanalyse (Schulprojekt)."""
+"""SkinCareApp - minimalistische Hautanalyse."""
 
 import io
 from datetime import datetime
@@ -8,9 +8,7 @@ import streamlit as st
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 
-# ============================================================
-# EINSTELLUNGEN
-# ============================================================
+# ---------- Einstellungen ----------
 
 MODEL_ID = "varun1505/face-characteristics"
 MAX_FILE_MB = 5
@@ -22,9 +20,7 @@ DISCLAIMER = (
 )
 
 
-# ============================================================
-# MODELL-KLASSEN
-# ============================================================
+# ---------- Modellklassen ----------
 
 LABEL_MAP = {
     "acne": "Hautunreinheiten",
@@ -36,12 +32,13 @@ LABEL_MAP = {
     "wrinkled face": "Falten",
 }
 
-NOT_SUPPORTED = ["Poren", "Trockene Haut"]
+NOT_SUPPORTED = [
+    "Poren",
+    "Trockene Haut",
+]
 
 
-# ============================================================
-# PFLEGETIPPS
-# ============================================================
+# ---------- Pflegetipps ----------
 
 CARE = {
     "Hautunreinheiten": (
@@ -53,6 +50,7 @@ CARE = {
             "Bei starken oder schmerzhaften Unreinheiten: Hautarzt fragen.",
         ],
     ),
+
     "Rötungen": (
         "Sichtbare Rötungen der Haut.",
         [
@@ -62,14 +60,16 @@ CARE = {
             "Bei anhaltender Rötung: Hautarzt fragen.",
         ],
     ),
+
     "Pigmentierung": (
         "Sichtbare dunklere Flecken auf der Haut.",
         [
             "Täglich Sonnenschutz (mindestens LSF 30) verwenden.",
             "Geduld haben: Hautveränderungen brauchen Zeit.",
-            "Neue oder sich verändernde Flecken immer ärztlich anschauen lassen.",
+            "Neue oder sich verändernde Flecken ärztlich anschauen lassen.",
         ],
     ),
+
     "Hautstruktur": (
         "Eine auffällige Oberflächenstruktur der Haut.",
         [
@@ -78,6 +78,7 @@ CARE = {
             "Täglich Sonnenschutz verwenden.",
         ],
     ),
+
     "Augenringe": (
         "Dunkle Schatten unter den Augen. Sie sind oft erblich bedingt.",
         [
@@ -86,6 +87,7 @@ CARE = {
             "Ein kühles Tuch kann sich erfrischend anfühlen.",
         ],
     ),
+
     "Geschwollene Augen": (
         "Sichtbare Schwellungen im Augenbereich.",
         [
@@ -94,6 +96,7 @@ CARE = {
             "Bei dauerhaften Schwellungen: Arzt fragen.",
         ],
     ),
+
     "Falten": (
         "Sichtbare Linien und Falten. Sie gehören zum natürlichen Altern.",
         [
@@ -105,69 +108,81 @@ CARE = {
 }
 
 
-# ============================================================
-# INHALTSSTOFFE
-# ============================================================
+# ---------- Inhaltsstoffe ----------
 
 INGREDIENTS = {
     "parfum": (
         "⚠️",
         "Duftstoff: kann empfindliche Haut reizen.",
     ),
+
     "fragrance": (
         "⚠️",
         "Duftstoff: kann empfindliche Haut reizen.",
     ),
+
     "limonene": (
         "⚠️",
         "Duftstoff-Allergen: kann bei empfindlicher Haut reizen.",
     ),
+
     "linalool": (
         "⚠️",
         "Duftstoff-Allergen: kann bei empfindlicher Haut reizen.",
     ),
+
     "alcohol denat": (
         "⚠️",
         "Vergällter Alkohol: kann austrocknen und reizen.",
     ),
+
     "sodium lauryl sulfate": (
         "⚠️",
         "Starkes Reinigungsmittel: kann die Haut austrocknen.",
     ),
+
     "menthol": (
         "⚠️",
         "Kann bei empfindlicher Haut reizen.",
     ),
+
     "retinol": (
         "ℹ️",
         "Starker Wirkstoff: langsam einführen, Sonnenschutz nutzen, "
         "in der Schwangerschaft ärztlich klären.",
     ),
+
     "salicylic acid": (
         "ℹ️",
         "Säure (BHA): kann bei Unreinheiten genutzt werden, "
         "aber auch reizen. Vorsichtig dosieren.",
     ),
+
     "glycolic acid": (
         "ℹ️",
         "Säure (AHA): macht die Haut sonnenempfindlicher. Sonnenschutz nutzen.",
     ),
+
     "niacinamide": (
         "✅",
         "Wird meist gut vertragen.",
     ),
+
     "glycerin": (
         "✅",
         "Feuchtigkeitsspendend.",
     ),
+
     "hyaluronic": (
         "✅",
         "Feuchtigkeitsspendend.",
     ),
+
     "ceramide": (
         "✅",
         "Unterstützt die Hautbarriere.",
     ),
+
     "panthenol": (
         "✅",
         "Beruhigend und feuchtigkeitsspendend.",
@@ -175,9 +190,7 @@ INGREDIENTS = {
 }
 
 
-# ============================================================
-# STREAMLIT-SEITENEINSTELLUNGEN
-# ============================================================
+# ---------- Streamlit-Einstellungen ----------
 
 st.set_page_config(
     page_title="SkinCareApp",
@@ -186,9 +199,7 @@ st.set_page_config(
 )
 
 
-# ============================================================
-# DESIGN
-# ============================================================
+# ---------- CSS ----------
 
 st.markdown(
     """
@@ -244,48 +255,30 @@ st.markdown(
 )
 
 
-# ============================================================
-# KI-MODELL
-# ============================================================
+# ---------- Modell ----------
 
 @st.cache_resource(
-    show_spinner="KI-Modell wird geladen (der erste Start kann etwas dauern) ..."
+    show_spinner="KI-Modell wird geladen. Der erste Start kann etwas dauern ..."
 )
 def load_model():
-    """
-    Lädt Bildprozessor und Modell einmalig.
+    """Lädt Bildprozessor und Modell einmalig."""
 
-    WICHTIG:
-    Wir verwenden hier ViTImageProcessor anstelle von
-    AutoImageProcessor, weil das Modell ein ViT-Modell ist.
-    """
-
-    from transformers import (
-        ViTImageProcessor,
-        AutoModelForImageClassification,
-    )
+    from transformers import ViTImageProcessor
+    from transformers import AutoModelForImageClassification
 
     processor = ViTImageProcessor.from_pretrained(MODEL_ID)
 
-    model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
+    model = AutoModelForImageClassification.from_pretrained(
+        MODEL_ID
+    )
 
     model.eval()
 
     return processor, model
 
 
-# ============================================================
-# BILD KLASSIFIZIEREN
-# ============================================================
-
 def classify(image):
-    """
-    Analysiert ein Bild und gibt eine nach Wahrscheinlichkeit
-    sortierte Liste zurück.
-
-    Format:
-    (deutscher Name, Original-Label, Score)
-    """
+    """Analysiert das Bild und gibt sortierte Modellwerte zurück."""
 
     import torch
 
@@ -299,7 +292,10 @@ def classify(image):
     with torch.no_grad():
         logits = model(**inputs).logits
 
-    probabilities = torch.softmax(logits, dim=-1)[0]
+    probabilities = torch.softmax(
+        logits,
+        dim=-1,
+    )[0]
 
     results = []
 
@@ -315,7 +311,10 @@ def classify(image):
             .lower()
         )
 
-        german_name = LABEL_MAP.get(key, original)
+        german_name = LABEL_MAP.get(
+            key,
+            original,
+        )
 
         results.append(
             (
@@ -332,15 +331,10 @@ def classify(image):
     )
 
 
-# ============================================================
-# BILD-HILFSFUNKTIONEN
-# ============================================================
+# ---------- Bild-Hilfsfunktionen ----------
 
 def load_valid_image(file):
-    """
-    Prüft Dateigröße und Bildformat.
-    Gibt (Bild, Fehlertext) zurück.
-    """
+    """Prüft Größe und Format und gibt ein RGB-Bild zurück."""
 
     data = file.getvalue()
 
@@ -354,12 +348,13 @@ def load_valid_image(file):
     try:
         Image.open(io.BytesIO(data)).verify()
 
-        image = Image.open(io.BytesIO(data))
-
-        image = (
-            ImageOps.exif_transpose(image)
-            .convert("RGB")
+        image = Image.open(
+            io.BytesIO(data)
         )
+
+        image = ImageOps.exif_transpose(
+            image
+        ).convert("RGB")
 
         return image, None
 
@@ -375,14 +370,8 @@ def load_valid_image(file):
         )
 
 
-# ============================================================
-# FOTO-QUALITÄT
-# ============================================================
-
 def check_photo_quality(image):
-    """
-    Grobe Prüfung von Helligkeit und Schärfe.
-    """
+    """Prüft grob Helligkeit und Schärfe des Fotos."""
 
     gray = np.asarray(
         image.convert("L").resize((256, 256)),
@@ -424,14 +413,8 @@ def check_photo_quality(image):
     return hints
 
 
-# ============================================================
-# BILD ZURÜCKSETZEN
-# ============================================================
-
 def reset_image():
-    """
-    Entfernt das aktuelle Bild.
-    """
+    """Setzt das aktuelle Bild zurück."""
 
     st.session_state.reset_count = (
         st.session_state.get("reset_count", 0) + 1
@@ -440,14 +423,10 @@ def reset_image():
     st.session_state.result = None
 
 
-# ============================================================
-# BERICHT
-# ============================================================
+# ---------- Bericht ----------
 
 def build_report(results):
-    """
-    Erstellt einen Textbericht ohne Foto.
-    """
+    """Erstellt einen Textbericht ohne Foto."""
 
     top_name, _, top_score = results[0]
 
@@ -457,8 +436,10 @@ def build_report(results):
             "Datum: %d.%m.%Y %H:%M"
         ),
         "",
-        f"Wahrscheinlichstes Merkmal: "
-        f"{top_name} ({top_score:.0%})",
+        (
+            f"Wahrscheinlichstes Merkmal: "
+            f"{top_name} ({top_score:.0%})"
+        ),
         "",
         "Alle Modellwerte:",
     ]
@@ -477,9 +458,7 @@ def build_report(results):
     return "\n".join(lines)
 
 
-# ============================================================
-# SEITE: HAUTANALYSE
-# ============================================================
+# ---------- Analyse-Seite ----------
 
 def page_analysis():
 
@@ -496,7 +475,10 @@ def page_analysis():
         unsafe_allow_html=True,
     )
 
-    n = st.session_state.get("reset_count", 0)
+    reset_count = st.session_state.get(
+        "reset_count",
+        0,
+    )
 
     source = st.radio(
         "Bildquelle",
@@ -508,10 +490,6 @@ def page_analysis():
         label_visibility="collapsed",
     )
 
-    # --------------------------------------------------------
-    # FOTO HOCHLADEN
-    # --------------------------------------------------------
-
     if source == "Foto hochladen":
 
         file = st.file_uploader(
@@ -521,12 +499,8 @@ def page_analysis():
                 "jpeg",
                 "png",
             ],
-            key=f"upload_{n}",
+            key=f"upload_{reset_count}",
         )
-
-    # --------------------------------------------------------
-    # KAMERA
-    # --------------------------------------------------------
 
     else:
 
@@ -538,40 +512,22 @@ def page_analysis():
 
         file = st.camera_input(
             "Selfie aufnehmen",
-            key=f"camera_{n}",
+            key=f"camera_{reset_count}",
         )
 
     if file is None:
         return
 
-    # --------------------------------------------------------
-    # BILD PRÜFEN
-    # --------------------------------------------------------
-
     image, error = load_valid_image(file)
 
     if error:
-
         st.error(error)
-
         return
 
-    st.image(
-        image,
-        caption="Ausgewähltes Foto",
-        use_container_width=True,
-    )
-
-    # --------------------------------------------------------
-    # FOTOQUALITÄT
-    # --------------------------------------------------------
+    st.image(image)
 
     for hint in check_photo_quality(image):
         st.warning(hint)
-
-    # --------------------------------------------------------
-    # BUTTONS
-    # --------------------------------------------------------
 
     col1, col2 = st.columns(2)
 
@@ -581,12 +537,8 @@ def page_analysis():
     )
 
     analyze = col2.button(
-        "Haut analysieren",
+        "Haut analysieren"
     )
-
-    # --------------------------------------------------------
-    # KI-ANALYSE
-    # --------------------------------------------------------
 
     if analyze:
 
@@ -595,7 +547,6 @@ def page_analysis():
             with st.spinner(
                 "Deine Haut wird analysiert ..."
             ):
-
                 results = classify(image)
 
             st.session_state.result = results
@@ -611,7 +562,9 @@ def page_analysis():
                         "%H:%M:%S"
                     ),
                     "Ergebnis": results[0][0],
-                    "Sicherheit": f"{results[0][2]:.0%}",
+                    "Sicherheit": (
+                        f"{results[0][2]:.0%}"
+                    ),
                 }
             )
 
@@ -623,43 +576,31 @@ def page_analysis():
 
             st.error(
                 "Das KI-Modell konnte nicht geladen "
-                "oder ausgeführt werden. Bitte versuche "
-                "es später noch einmal."
+                "oder ausgeführt werden. "
+                "Bitte versuche es später noch einmal."
             )
 
             with st.expander(
                 "Technische Details"
             ):
-
                 st.code(
                     f"{type(error_info).__name__}: "
                     f"{error_info}"
                 )
 
-    # --------------------------------------------------------
-    # ERGEBNIS ANZEIGEN
-    # --------------------------------------------------------
-
     if st.session_state.get("result"):
-
         show_results(
             st.session_state.result
         )
 
 
-# ============================================================
-# ERGEBNISSE
-# ============================================================
+# ---------- Ergebnisse ----------
 
 def show_results(results):
 
     st.subheader("Ergebnis")
 
     top_name, _, top_score = results[0]
-
-    # --------------------------------------------------------
-    # NICHT SICHER
-    # --------------------------------------------------------
 
     if top_score < CONFIDENCE_THRESHOLD:
 
@@ -679,10 +620,6 @@ def show_results(results):
             unsafe_allow_html=True,
         )
 
-    # --------------------------------------------------------
-    # ERGEBNIS
-    # --------------------------------------------------------
-
     else:
 
         explanation, tips = CARE.get(
@@ -693,21 +630,16 @@ def show_results(results):
         st.markdown(
             f"""
             <div class='card'>
-            <b>Wahrscheinlichstes sichtbares Merkmal:</b>
-            {top_name}
-            <br>
-
-            <span class='small'>
-            {explanation}
-
-            Sicherheit des Modells:
-            {top_score:.0%}.
-
-            Das Modell wählt
-            <u>eine</u> Kategorie pro Bild und
-            erkennt nicht mehrere Merkmale gleichzeitig.
-            </span>
-
+                <b>Wahrscheinlichstes sichtbares Merkmal:</b>
+                {top_name}<br>
+                <span class='small'>
+                    {explanation}
+                    Sicherheit des Modells:
+                    {top_score:.0%}.
+                    Das Modell wählt eine Kategorie
+                    pro Bild und erkennt nicht mehrere
+                    Merkmale gleichzeitig.
+                </span>
             </div>
             """,
             unsafe_allow_html=True,
@@ -724,10 +656,6 @@ def show_results(results):
                     f"- {tip}"
                 )
 
-    # --------------------------------------------------------
-    # ALLE MODELLWERTE
-    # --------------------------------------------------------
-
     st.markdown(
         "**Alle Modellwerte**"
     )
@@ -735,7 +663,10 @@ def show_results(results):
     for name, _, score in results:
 
         st.progress(
-            min(max(score, 0.0), 1.0),
+            min(
+                max(score, 0.0),
+                1.0,
+            ),
             text=f"{name}: {score:.0%}",
         )
 
@@ -744,17 +675,12 @@ def show_results(results):
         <p class='small'>
         Von diesem Modell nicht erkannt:
         {', '.join(NOT_SUPPORTED)}.
-
         Die Werte sind die Ausgabe des Modells
         und kein medizinisches Maß.
         </p>
         """,
         unsafe_allow_html=True,
     )
-
-    # --------------------------------------------------------
-    # BERICHT DOWNLOAD
-    # --------------------------------------------------------
 
     st.download_button(
         "Bericht herunterladen (ohne Foto)",
@@ -763,9 +689,7 @@ def show_results(results):
     )
 
 
-# ============================================================
-# SEITE: VERLAUF
-# ============================================================
+# ---------- Verlauf ----------
 
 def page_history():
 
@@ -800,9 +724,7 @@ def page_history():
         st.rerun()
 
 
-# ============================================================
-# SEITE: HAUTTYP-QUIZ
-# ============================================================
+# ---------- Hauttyp-Quiz ----------
 
 def page_quiz():
 
@@ -885,25 +807,22 @@ def page_quiz():
         )
 
     st.markdown(
-        f"""
-        <p class='small'>
-        {DISCLAIMER}
-        </p>
-        """,
+        f"<p class='small'>{DISCLAIMER}</p>",
         unsafe_allow_html=True,
     )
 
 
-# ============================================================
-# SEITE: INHALTSSTOFFE
-# ============================================================
+# ---------- Inhaltsstoffe ----------
 
 def page_ingredients():
 
-    st.subheader("Inhaltsstoffe-Check")
+    st.subheader(
+        "Inhaltsstoffe-Check"
+    )
 
     st.caption(
-        "Füge die Zutatenliste (INCI) eines Pflegeprodukts ein."
+        "Füge die Zutatenliste (INCI) "
+        "eines Pflegeprodukts ein."
     )
 
     text = st.text_area(
@@ -936,7 +855,11 @@ def page_ingredients():
             )
 
             found.append(
-                (keyword, icon, note)
+                (
+                    keyword,
+                    icon,
+                    note,
+                )
             )
 
     if not found:
@@ -958,7 +881,6 @@ def page_ingredients():
         ⚠️ möglicher Reizstoff ·
         ℹ️ Wirkstoff mit Hinweisen ·
         ✅ pflegend.
-
         Das ist nur eine einfache Stichwortliste
         und keine Bewertung der Verträglichkeit.
         </p>
@@ -967,13 +889,13 @@ def page_ingredients():
     )
 
 
-# ============================================================
-# SEITE: INFO
-# ============================================================
+# ---------- Info ----------
 
 def page_about():
 
-    st.subheader("Info & Datenschutz")
+    st.subheader(
+        "Info & Datenschutz"
+    )
 
     st.write(
         "Die SkinCareApp ist ein Schulprojekt. "
@@ -1004,20 +926,21 @@ def page_about():
         "aktuelle Foto aus der App."
     )
 
-    st.info(DISCLAIMER)
+    st.info(
+        DISCLAIMER
+    )
 
 
-# ============================================================
-# START DER APP
-# ============================================================
+# ---------- Start der App ----------
 
-st.title("🌸 SkinCareApp")
+st.title(
+    "🌸 SkinCareApp"
+)
 
 st.caption(
     "Sanfte, KI-gestützte Einblicke "
     "in sichtbare Hautmerkmale."
 )
-
 
 tabs = st.tabs(
     [
@@ -1027,143 +950,24 @@ tabs = st.tabs(
         "Inhaltsstoffe",
         "Info",
     ]
-)Die entscheidende Stelle in deiner app.py ist:
-processor = AutoImageProcessor.from_pretrained(MODEL_ID)
-
-Das Modell varun1505/face-characteristics ist zwar auf Hugging Face als Image-Classification-Modell veröffentlicht und die Modellseite zeigt ebenfalls genau diesen Ladeweg. Aber deine aktuelle transformers-Version kann die vorhandene preprocessor_config.json offenbar nicht automatisch einem Bildprozessor zuordnen. Genau deshalb kommt:
-
-    ValueError: Unrecognized image processor ... Should have a image_processor_type key...
-
-Hugging Face erklärt, dass AutoImageProcessor normalerweise anhand der Processor-Konfiguration bzw. des Modelltyps entscheidet, welcher Bildprozessor verwendet werden soll.
-Die einfachste Lösung
-
-Da dein Modell ein ViT-Modell ist, würde ich den automatischen AutoImageProcessor umgehen und den für ViT passenden Processor explizit verwenden.
-
-In deiner app.py musst du zunächst diesen Import ändern.
-
-Aktuell:
-from transformers import AutoImageProcessor, AutoModelForImageClassification
-
-Ändern zu:
-from transformers import ViTImageProcessor, AutoModelForImageClassification
-
-Und diese Zeile:
-processor = AutoImageProcessor.from_pretrained(MODEL_ID)
-
-ändern zu:
-processor = ViTImageProcessor.from_pretrained(MODEL_ID)
-
-Deine komplette load_model()-Funktion sollte dann so aussehen:
-@st.cache_resource(show_spinner="KI-Modell wird geladen (der erste Start kann etwas dauern) ...")
-def load_model():
-    """Lädt Bildprozessor und Modell einmalig und merkt sie sich."""
-    from transformers import ViTImageProcessor, AutoModelForImageClassification
-
-    processor = ViTImageProcessor.from_pretrained(MODEL_ID)
-    model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
-    model.eval()
-
-    return processor, model
-
-Das ist die erste Änderung, die ich ausprobieren würde.
-Aber: requirements.txt würde ich ebenfalls ändern
-
-Deine aktuelle Datei ist:
---extra-index-url https://download.pytorch.org/whl/cpu
-streamlit>=1.40
-transformers>=4.44
-torch
-torchvision
-pillow
-numpy
-
-Das >= bei transformers ist etwas problematisch für ein Schulprojekt, weil Streamlit beim nächsten Deployment eine deutlich neuere Transformers-Version installieren kann. Dein Modell wurde offenbar mit einer älteren/anderen Konfiguration veröffentlicht.
-
-Ich würde deshalb zunächst eine konkrete Version verwenden:
---extra-index-url https://download.pytorch.org/whl/cpu
-
-streamlit>=1.40,<2.0
-transformers==4.44.2
-torch
-torchvision
-pillow
-numpy
-
-Wichtig: Nicht einfach blind transformers auf die allerneueste Version setzen. Dein Fehler ist gerade ein Hinweis darauf, dass die automatische Erkennung des Processors zwischen Modell-Repository und installierter Transformers-Version nicht sauber zusammenspielt.
-
-Die Hugging-Face-Dokumentation bestätigt außerdem, dass ein Image Processor die Bildgrößen, Normalisierung und Umwandlung in Tensoren übernimmt – genau das brauchst du vor deinem model(**inputs)-Aufruf.
-Noch eine Sache in deinem Code
-
-Du hast in deiner README.md geschrieben:
-
-    varun1505/face-characteristics – Vision Transformer, ca. 86 Mio. Parameter.
-
-Auf der aktuellen Hugging-Face-Seite ist das Repository weiterhin als ViT Image Classification ausgewiesen.
-
-Das passt also zu ViTImageProcessor.
-Was du jetzt konkret machen solltest
-
-1. app.py ändern
-
-Nur diesen Teil:
-from transformers import AutoImageProcessor, AutoModelForImageClassification
-
-zu:
-from transformers import ViTImageProcessor, AutoModelForImageClassification
-
-und:
-processor = AutoImageProcessor.from_pretrained(MODEL_ID)
-
-zu:
-processor = ViTImageProcessor.from_pretrained(MODEL_ID)
-
-2. requirements.txt ersetzen durch:
---extra-index-url https://download.pytorch.org/whl/cpu
-streamlit>=1.40,<2.0
-transformers==4.44.2
-torch
-torchvision
-pillow
-numpy
-
-3. Commit + Push zu GitHub
-
-Dann Streamlit Cloud neu deployen bzw. die App neu starten.
-Falls danach ein neuer Fehler kommt
-
-Dann schick mir den neuen Fehlertext. Besonders wichtig wäre dann die erste Zeile des Fehlers und die letzten ~10 Zeilen.
-
-Denn es gibt bei diesem Modell noch einen zweiten Punkt, den wir gegebenenfalls prüfen müssen: die tatsächliche preprocessor_config.json des Modells. Das Repository enthält diese Datei tatsächlich.
-
-Deine übrige App – Upload, Kamera, Foto-Qualitätscheck, Verlauf, Quiz und Inhaltsstoffe – muss dafür nicht neu geschrieben werden. Die problematische Stelle ist aktuell sehr gezielt der Modell-/Processor-Ladevorgang.
-
-
+)
 
 with tabs[0]:
     page_analysis()
 
-
 with tabs[1]:
     page_history()
-
 
 with tabs[2]:
     page_quiz()
 
-
 with tabs[3]:
     page_ingredients()
-
 
 with tabs[4]:
     page_about()
 
-
 st.markdown(
-    f"""
-    <p class='small'>
-    {DISCLAIMER}
-    </p>
-    """,
+    f"<p class='small'>{DISCLAIMER}</p>",
     unsafe_allow_html=True,
 )
