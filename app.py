@@ -16,7 +16,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 # EINSTELLUNGEN UND DATEN
 # ============================================================
 
-MODEL_ID = "varun1505/face-characteristics"
+MODEL_ID = "Muqtadar08/skin_type_classifier"
 MAX_FILE_MB = 5
 MAX_IMAGE_SIZE = 1024  # Bilder werden für die Analyse verkleinert (spart Speicher)
 CONFIDENCE_THRESHOLD = 0.50
@@ -26,50 +26,32 @@ DISCLAIMER = (
     "Sie stellt keine medizinische Diagnose und ersetzt keine ärztliche Beratung."
 )
 
-# Die 7 echten Klassen des Modells -> deutsche Namen
+# Die 3 Klassen des vortrainierten Modells -> deutsche Namen
 LABEL_MAP = {
-    "acne": "Hautunreinheiten",
-    "skin redness": "Rötungen",
-    "skin pigmentation": "Pigmentierung",
-    "skin texture": "Hautstruktur",
-    "eyes dark circles": "Augenringe",
-    "puffy eyes": "Geschwollene Augen",
-    "wrinkled face": "Falten",
+    "dry": "Trockene Haut",
+    "normal": "Normale Haut",
+    "oily": "Fettige Haut",
 }
-NOT_SUPPORTED = ["Poren", "Trockene Haut"]
 
-# Merkmal: (Erklärung, Pflegetipps)
+NOT_SUPPORTED = ["Akne", "Rötungen", "Pigmentierung", "Falten"]
+
+# Hauttyp: (Erklärung, allgemeine Pflegetipps)
 CARE = {
-    "Hautunreinheiten": ("Sichtbare Unreinheiten wie Pickel oder Mitesser.", [
-        "Zweimal täglich sanft reinigen.",
-        "Nicht ausdrücken, das kann die Haut reizen.",
-        "Nicht komedogene Pflege bevorzugen.",
-        "Bei starken oder schmerzhaften Unreinheiten Hautarzt fragen."]),
-    "Rötungen": ("Sichtbare Rötungen der Haut.", [
-        "Milde und möglichst parfümfreie Produkte verwenden.",
-        "Sehr heißes Wasser und grobe Peelings vermeiden.",
-        "Die Routine einfach halten.",
-        "Bei anhaltender Rötung ärztlich abklären lassen."]),
-    "Pigmentierung": ("Sichtbare dunklere Flecken oder ungleichmäßige Pigmentierung.", [
-        "Täglich Sonnenschutz verwenden.",
-        "Geduldig sein, Hautveränderungen brauchen Zeit.",
-        "Neue oder sich verändernde Flecken ärztlich anschauen lassen."]),
-    "Hautstruktur": ("Eine auffällige oder ungleichmäßige Oberflächenstruktur.", [
-        "Sanft reinigen und regelmäßig Feuchtigkeitspflege verwenden.",
-        "Nicht zu häufig peelen.",
-        "Täglich Sonnenschutz verwenden."]),
-    "Augenringe": ("Dunkle Schatten unter den Augen.", [
-        "Ausreichend schlafen.",
-        "Eine milde Augenpflege verwenden.",
-        "Auch im Augenbereich an Sonnenschutz denken."]),
-    "Geschwollene Augen": ("Sichtbare Schwellungen im Augenbereich.", [
-        "Ausreichend schlafen und trinken.",
-        "Ein kühles Tuch kann angenehm sein.",
-        "Bei dauerhaften Schwellungen ärztlich abklären lassen."]),
-    "Falten": ("Sichtbare Linien und Falten, die zum natürlichen Altern gehören.", [
-        "Täglich Sonnenschutz verwenden.",
-        "Regelmäßig Feuchtigkeitspflege verwenden.",
-        "Keine Pflege kann Falten garantiert entfernen."]),
+    "Trockene Haut": ("Das Modell ordnet das Bild überwiegend dem Hauttyp trockene Haut zu.", [
+        "Milde und möglichst reizarm formulierte Reinigung verwenden.",
+        "Eine feuchtigkeitsspendende Creme kann sinnvoll sein.",
+        "Sehr aggressive oder stark austrocknende Produkte vermeiden.",
+    ]),
+    "Normale Haut": ("Das Modell ordnet das Bild überwiegend dem Hauttyp normale Haut zu.", [
+        "Eine einfache, milde Reinigungs- und Pflegeroutine verwenden.",
+        "Die Haut regelmäßig mit Feuchtigkeit versorgen.",
+        "Täglichen Sonnenschutz als Teil der Routine einplanen.",
+    ]),
+    "Fettige Haut": ("Das Modell ordnet das Bild überwiegend dem Hauttyp fettige Haut zu.", [
+        "Milde Reinigung verwenden und die Haut nicht übermäßig waschen.",
+        "Leichte Pflege kann sich angenehm anfühlen.",
+        "Auch bei fettiger Haut ist Feuchtigkeitspflege sinnvoll.",
+    ]),
 }
 
 # Name: (Symbol, Kategorie, Beschreibung, Eigenschaften, Tipp)
@@ -293,16 +275,11 @@ for key, value in DEFAULTS.items():
 
 @st.cache_resource(show_spinner="KI-Modell wird geladen. Der erste Start kann etwas dauern ...")
 def load_model():
-    from transformers import AutoModelForImageClassification, ViTImageProcessor
+    from transformers import AutoImageProcessor, AutoModelForImageClassification
 
-    # Das Modell bringt keine Vorverarbeitungs-Datei mit. Wir nutzen die
-    # Standardwerte eines ViT-Modells (224x224 Pixel, Normalisierung mit 0.5).
-    processor = ViTImageProcessor(
-        do_resize=True,
-        size={"height": 224, "width": 224},
-        image_mean=[0.5, 0.5, 0.5],
-        image_std=[0.5, 0.5, 0.5],
-    )
+    # Der Processor wird direkt aus dem Modell-Repository geladen. Dadurch
+    # verwendet die App genau die dort hinterlegte Bildvorverarbeitung.
+    processor = AutoImageProcessor.from_pretrained(MODEL_ID)
     model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
     model.eval()
     return processor, model
@@ -442,7 +419,7 @@ def page_home():
 def page_analysis():
     hero("🤖 KI-Hautanalyse",
          "Lade ein Selfie hoch oder nutze deine Kamera. Die KI ordnet das Bild "
-         "einem sichtbaren Hautmerkmal zu.")
+         "einem von drei Hauttypen zu.")
     card("""
     <span class="badge">KI-Analyse</span>
     <span class="badge badge-green">Privatsphäre</span>
@@ -541,7 +518,7 @@ def show_results(results):
     for name, _, score in results:
         st.progress(min(max(score, 0.0), 1.0), text=f"{name} · {score:.0%}")
 
-    st.caption(f"Das Modell wählt eine Kategorie pro Bild. Von diesem Modell nicht erkannt: "
+    st.caption(f"Das Modell wählt eine Kategorie pro Bild. Nicht enthaltene Merkmale sind z. B.: "
                f"{', '.join(NOT_SUPPORTED)}. Die Werte sind keine medizinischen Messwerte.")
     st.download_button("📄 Analysebericht herunterladen (ohne Foto)", build_report(results),
                        file_name="skincare_bericht.txt", mime="text/plain")
@@ -846,10 +823,10 @@ def page_about():
     <p>Verwendet wird das vortrainierte Hugging-Face-Modell:</p>
     <span class="badge">{MODEL_ID}</span>
     <p class="small" style="margin-top:0.8rem;">
-    Das Modell ordnet ein Bild genau einer von sieben Kategorien zu (Unreinheiten, Rötungen,
-    Pigmentierung, Hautstruktur, Augenringe, geschwollene Augen, Falten). Die Genauigkeit wird
-    von den Autoren mit etwa 57 % angegeben. Poren und trockene Haut erkennt es nicht.
-    Die Ergebnisse können falsch sein.
+    Das Modell ordnet ein Gesichtsfoto einer von drei Kategorien zu: trockene, normale oder
+    fettige Haut. Laut Model Card erreicht es eine Genauigkeit von 61,61 % auf einem Testdatensatz
+    mit 672 Bildern. Das Modell steht unter der Apache-2.0-Lizenz. Die Ergebnisse können falsch
+    sein und sind keine medizinische Diagnose.
     </p>
     """)
     card("""
