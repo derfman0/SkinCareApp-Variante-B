@@ -1,4 +1,3 @@
-@@ -1,33 +1,6 @@
 # SkinCareApp (Variante 2: Hugging Face)
 
 Minimalistische Streamlit-App, die sichtbare Hautmerkmale auf einem Selfie mit einem
