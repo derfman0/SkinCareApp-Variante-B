@@ -1,6 +1,6 @@
 """
 SkinCareApp
-KI-Hautanalyse, Pflegeplan, Tagebuch, Statistik,
+KI-Hauttyp-Analyse, Pflegeplan, Tagebuch, Statistik,
 Wirkstoff-Lexikon, Quiz und Inhaltsstoffe-Check.
 """
 
@@ -26,32 +26,30 @@ DISCLAIMER = (
     "Sie stellt keine medizinische Diagnose und ersetzt keine ärztliche Beratung."
 )
 
-# Die 3 Klassen des vortrainierten Modells -> deutsche Namen
+# Die 3 echten Klassen des Modells (dry, normal, oily) -> deutsche Namen
 LABEL_MAP = {
     "dry": "Trockene Haut",
     "normal": "Normale Haut",
     "oily": "Fettige Haut",
 }
+NOT_SUPPORTED = ["Unreinheiten", "Rötungen", "Pigmentierung", "Poren"]
 
-NOT_SUPPORTED = ["Akne", "Rötungen", "Pigmentierung", "Falten"]
-
-# Hauttyp: (Erklärung, allgemeine Pflegetipps)
+# Hauttyp: (Erklärung, Pflegetipps)
 CARE = {
-    "Trockene Haut": ("Das Modell ordnet das Bild überwiegend dem Hauttyp trockene Haut zu.", [
-        "Milde und möglichst reizarm formulierte Reinigung verwenden.",
-        "Eine feuchtigkeitsspendende Creme kann sinnvoll sein.",
-        "Sehr aggressive oder stark austrocknende Produkte vermeiden.",
-    ]),
-    "Normale Haut": ("Das Modell ordnet das Bild überwiegend dem Hauttyp normale Haut zu.", [
-        "Eine einfache, milde Reinigungs- und Pflegeroutine verwenden.",
-        "Die Haut regelmäßig mit Feuchtigkeit versorgen.",
-        "Täglichen Sonnenschutz als Teil der Routine einplanen.",
-    ]),
-    "Fettige Haut": ("Das Modell ordnet das Bild überwiegend dem Hauttyp fettige Haut zu.", [
-        "Milde Reinigung verwenden und die Haut nicht übermäßig waschen.",
-        "Leichte Pflege kann sich angenehm anfühlen.",
-        "Auch bei fettiger Haut ist Feuchtigkeitspflege sinnvoll.",
-    ]),
+    "Trockene Haut": ("Die Haut wirkt eher trocken und kann sich spannend anfühlen.", [
+        "Mild reinigen, am besten mit lauwarmem Wasser.",
+        "Regelmäßig eine reichhaltigere Feuchtigkeitscreme verwenden.",
+        "Auf Inhaltsstoffe wie Glycerin, Hyaluronsäure oder Ceramide achten.",
+        "Täglich Sonnenschutz verwenden."]),
+    "Normale Haut": ("Die Haut wirkt eher ausgeglichen, weder auffallend trocken noch fettig.", [
+        "Eine einfache Basispflege genügt meist: reinigen, eincremen, Sonnenschutz.",
+        "Milde Produkte verwenden und die Routine nicht überladen.",
+        "Täglich Sonnenschutz verwenden."]),
+    "Fettige Haut": ("Die Haut wirkt eher glänzend, vor allem an Stirn und Nase.", [
+        "Sanft reinigen, aber nicht übertrieben oft waschen.",
+        "Leichte, nicht komedogene Pflege (z. B. Gel-Creme) bevorzugen.",
+        "Auch fettige Haut braucht Feuchtigkeit.",
+        "Täglich Sonnenschutz verwenden, am besten in leichter Textur."]),
 }
 
 # Name: (Symbol, Kategorie, Beschreibung, Eigenschaften, Tipp)
@@ -179,72 +177,198 @@ def empty_state(icon, title, text):
     """)
 
 
+def divider():
+    html('<div class="divider"><span>✦</span></div>')
+
+
+def section_title(text):
+    html(f'<div class="section-title">{text}</div>')
+
+
+def score_bar(name, score, top=False):
+    """Eigener Balken für die Modellwerte."""
+    width = max(1, round(min(max(score, 0.0), 1.0) * 100))
+    css = "bar-fill top" if top else "bar-fill"
+    html(f"""
+    <div class="bar-row">
+    <div class="bar-label"><span>{name}</span><b>{score:.0%}</b></div>
+    <div class="bar-track"><div class="{css}" style="width:{width}%;"></div></div>
+    </div>
+    """)
+
+
 html("""
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
+:root {--rose: #D8A7A0; --rose-dark: #B77F76; --brown: #4A3328; --text: #5D463C; --muted: #947C70;}
+
+/* ---------- Hintergrund: Farbverlauf + Blätter-Muster + schwebende Farbflächen ---------- */
 [data-testid="stAppViewContainer"] {
-    background:
-        radial-gradient(circle at 10% 10%, rgba(232,193,187,0.25), transparent 30%),
-        radial-gradient(circle at 90% 15%, rgba(216,167,160,0.18), transparent 28%),
-        #FBF8F3;
+    background-color: #FBF8F3;
+    background-image:
+        radial-gradient(circle at 8% 12%, rgba(232,193,187,0.38), transparent 32%),
+        radial-gradient(circle at 92% 18%, rgba(244,224,206,0.55), transparent 30%),
+        radial-gradient(circle at 70% 92%, rgba(216,167,160,0.22), transparent 34%),
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140' viewBox='0 0 140 140'%3E%3Cg fill='none' stroke='%23D8A7A0' stroke-opacity='0.22' stroke-width='1.2'%3E%3Cpath d='M22 34c10-15 28-15 32 0-13 11-28 11-32 0z'/%3E%3Cpath d='M22 34l24-7'/%3E%3Ccircle cx='100' cy='30' r='3'/%3E%3Cpath d='M92 100c10-15 28-15 32 0-13 11-28 11-32 0z'/%3E%3Cpath d='M92 100l24-7'/%3E%3Ccircle cx='30' cy='108' r='3'/%3E%3Ccircle cx='70' cy='70' r='1.6'/%3E%3C/g%3E%3C/svg%3E");
+    background-size: 100% 100%, 100% 100%, 100% 100%, 140px 140px;
+    background-attachment: fixed, fixed, fixed, scroll;
+}
+[data-testid="stAppViewContainer"]::before {
+    content: ""; position: fixed; top: -140px; right: -120px; width: 460px; height: 460px;
+    border-radius: 50%; pointer-events: none; z-index: 0; filter: blur(8px);
+    background: radial-gradient(circle, rgba(216,167,160,0.32), transparent 68%);
+    animation: floaty 20s ease-in-out infinite alternate;
+}
+[data-testid="stAppViewContainer"]::after {
+    content: ""; position: fixed; bottom: -160px; left: 12%; width: 520px; height: 520px;
+    border-radius: 50%; pointer-events: none; z-index: 0; filter: blur(10px);
+    background: radial-gradient(circle, rgba(236,214,196,0.5), transparent 68%);
+    animation: floaty 26s ease-in-out infinite alternate-reverse;
+}
+@keyframes floaty {
+    from {transform: translate(0, 0) scale(1);}
+    to {transform: translate(-45px, 35px) scale(1.1);}
+}
+@media (prefers-reduced-motion: reduce) {
+    [data-testid="stAppViewContainer"]::before, [data-testid="stAppViewContainer"]::after {animation: none;}
 }
 [data-testid="stHeader"] {background: transparent;}
-.block-container {max-width: 1100px; padding-top: 2rem; padding-bottom: 4rem;}
+.block-container {max-width: 1100px; padding-top: 2rem; padding-bottom: 4rem; position: relative; z-index: 1;}
+
+/* ---------- Seitenleiste ---------- */
 [data-testid="stSidebar"] {
     background: linear-gradient(180deg, #F4E9E1 0%, #FBF8F3 55%, #F7EEE8 100%);
-    border-right: 1px solid rgba(130,90,80,0.08);
+    border-right: 1px solid rgba(130,90,80,0.10);
 }
-h1, h2, h3, h4 {color: #4A3328 !important; font-weight: 600 !important; letter-spacing: -0.02em;}
+[data-testid="stSidebar"] [role="radiogroup"] {gap: 0.25rem;}
+[data-testid="stSidebar"] [role="radiogroup"] label {
+    padding: 0.55rem 0.9rem; border-radius: 14px; width: 100%;
+    transition: background 0.2s ease, transform 0.2s ease;
+}
+[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+    background: rgba(216,167,160,0.18); transform: translateX(3px);
+}
+[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+    background: linear-gradient(135deg, rgba(216,167,160,0.38), rgba(246,228,222,0.85));
+    box-shadow: 0 4px 14px rgba(93,60,50,0.09);
+}
+.logo-badge {
+    width: 58px; height: 58px; margin: 0 auto 0.6rem auto; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center; font-size: 1.8rem;
+    background: linear-gradient(135deg, #FFFFFF, #F4D9D2);
+    box-shadow: 0 8px 22px rgba(183,127,118,0.28);
+}
+.logo-name {font-family: Georgia, 'Times New Roman', serif; font-size: 1.35rem; font-weight: 700; color: #4A3328;}
+.logo-tag {color: #967D72; font-size: 0.74rem; letter-spacing: 0.04em;}
+
+/* ---------- Typografie ---------- */
+h1, h2, h3, h4 {
+    color: #4A3328 !important; font-weight: 600 !important; letter-spacing: -0.01em;
+    font-family: Georgia, 'Times New Roman', serif !important;
+}
 p, label {color: #5D463C;}
 .small {color: #947C70; font-size: 0.86rem;}
-.stButton > button {
-    border-radius: 999px; border: 1px solid #D8A7A0; background: #D8A7A0;
-    color: white; font-weight: 600; padding: 0.55rem 1.35rem;
+.section-title {
+    font-family: Georgia, 'Times New Roman', serif; font-size: 1.55rem; color: #4A3328;
+    margin: 0.4rem 0 1rem 0; padding-left: 0.9rem; border-left: 4px solid #D8A7A0;
 }
-.stButton > button:hover {background: #C99189; border-color: #C99189; color: white;}
-.stButton > button:disabled {background: #E9D6D2; border-color: #E9D6D2; color: #fff;}
+.divider {display: flex; align-items: center; gap: 0.8rem; margin: 1.6rem 0; color: #D8A7A0;}
+.divider:before, .divider:after {content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, transparent, #E5CFC8, transparent);}
+
+/* ---------- Buttons ---------- */
+.stButton > button, .stDownloadButton > button {
+    border-radius: 999px; border: 1px solid #D8A7A0;
+    background: linear-gradient(135deg, #E2B5AE, #D8A7A0);
+    color: white; font-weight: 600; padding: 0.55rem 1.4rem;
+    box-shadow: 0 6px 16px rgba(183,127,118,0.25);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.stButton > button:hover, .stDownloadButton > button:hover {
+    background: linear-gradient(135deg, #D8A7A0, #C99189); border-color: #C99189; color: white;
+    transform: translateY(-2px); box-shadow: 0 10px 22px rgba(183,127,118,0.32);
+}
+.stButton > button:disabled {background: #E9D6D2; border-color: #E9D6D2; color: #fff; box-shadow: none;}
 .stProgress > div > div > div > div {background-color: #D8A7A0;}
-.hero {
-    background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(249,235,230,0.92));
-    border: 1px solid rgba(150,105,95,0.12); border-radius: 28px;
-    padding: 2rem 2.3rem; box-shadow: 0 15px 45px rgba(93,60,50,0.08); margin-bottom: 1.3rem;
+
+/* ---------- Eingabe-Elemente ---------- */
+[data-testid="stFileUploaderDropzone"] {
+    background: rgba(255,255,255,0.85); border: 2px dashed #D8A7A0; border-radius: 22px;
 }
-.hero-title {font-weight: 650; color: #4A3328; margin-bottom: 0.4rem;}
-.hero-subtitle {font-size: 1.05rem; color: #846D62; max-width: 680px; line-height: 1.7;}
+[data-testid="stCameraInput"] {border-radius: 22px; overflow: hidden;}
+[data-testid="stImage"] img {border-radius: 22px; box-shadow: 0 14px 34px rgba(93,60,50,0.16);}
+[data-testid="stExpander"] {
+    background: rgba(255,255,255,0.88); border: 1px solid rgba(140,100,90,0.12) !important;
+    border-radius: 18px; overflow: hidden; box-shadow: 0 6px 18px rgba(93,60,50,0.04);
+}
+[data-testid="stAlert"] {border-radius: 16px;}
+[data-testid="stMetric"] {
+    background: #FFFFFF; border: 1px solid #EEDDD7; border-radius: 16px; padding: 0.7rem 1rem;
+}
+div[data-baseweb="input"] > div, div[data-baseweb="textarea"] > div, div[data-baseweb="select"] > div {
+    border-radius: 14px !important; border-color: #E6D4CD !important; background: rgba(255,255,255,0.9) !important;
+}
+
+/* ---------- Karten ---------- */
+.hero {
+    position: relative; overflow: hidden;
+    background: linear-gradient(135deg, #FFFFFF 0%, #FCEFEA 55%, #F6DDD5 100%);
+    border: 1px solid rgba(150,105,95,0.14); border-radius: 30px;
+    padding: 2.3rem 2.5rem; box-shadow: 0 18px 50px rgba(93,60,50,0.10); margin-bottom: 1.3rem;
+}
+.hero:before {
+    content: ""; position: absolute; right: -70px; top: -70px; width: 260px; height: 260px; border-radius: 50%;
+    background: radial-gradient(circle at 30% 30%, rgba(255,255,255,0.95), rgba(216,167,160,0.38));
+}
+.hero:after {content: "✿"; position: absolute; right: 42px; bottom: 6px; font-size: 5.5rem; color: rgba(216,167,160,0.35);}
+.hero > div {position: relative; z-index: 1;}
+.hero-eyebrow {font-size: 0.74rem; letter-spacing: 0.18em; color: #B77F76; font-weight: 700; margin-bottom: 0.6rem;}
+.hero-title {
+    font-family: Georgia, 'Times New Roman', serif; font-weight: 700; margin-bottom: 0.5rem;
+    background: linear-gradient(90deg, #4A3328 30%, #B77F76 100%); -webkit-background-clip: text;
+    background-clip: text; -webkit-text-fill-color: transparent; color: #4A3328;
+}
+.hero-subtitle {font-size: 1.05rem; color: #846D62; max-width: 640px; line-height: 1.75;}
 .section-card {
-    background: rgba(255,255,255,0.85); border: 1px solid rgba(140,100,90,0.10);
-    border-radius: 22px; padding: 1.3rem; box-shadow: 0 8px 28px rgba(93,60,50,0.05);
-    margin-bottom: 1rem;
+    background: rgba(255,255,255,0.82); backdrop-filter: blur(6px);
+    border: 1px solid rgba(140,100,90,0.12); border-top: 3px solid #E5C2BB;
+    border-radius: 22px; padding: 1.3rem; box-shadow: 0 10px 30px rgba(93,60,50,0.06); margin-bottom: 1rem;
 }
 .feature-card {
-    background: rgba(255,255,255,0.9); border: 1px solid rgba(140,100,90,0.10);
-    border-radius: 20px; padding: 1.1rem; min-height: 165px;
-    box-shadow: 0 8px 24px rgba(93,60,50,0.05); margin-bottom: 1rem;
+    background: rgba(255,255,255,0.9); border: 1px solid rgba(140,100,90,0.12);
+    border-radius: 22px; padding: 1.2rem; min-height: 170px; margin-bottom: 1rem;
+    box-shadow: 0 8px 24px rgba(93,60,50,0.05);
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
 }
+.feature-card:hover {transform: translateY(-5px); box-shadow: 0 18px 38px rgba(93,60,50,0.13); border-color: #D8A7A0;}
 .feature-icon {
-    width: 42px; height: 42px; border-radius: 14px; background: #F5E1DB;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 1.3rem; margin-bottom: 0.7rem;
+    width: 46px; height: 46px; border-radius: 15px; display: flex; align-items: center; justify-content: center;
+    font-size: 1.35rem; margin-bottom: 0.75rem; background: linear-gradient(135deg, #FBE9E4, #F2D3CB);
 }
-.feature-title {color: #4A3328; font-weight: 650; font-size: 1.05rem;}
-.feature-text {color: #89736A; font-size: 0.88rem; line-height: 1.5; margin-top: 0.35rem;}
+.feature-title {color: #4A3328; font-weight: 650; font-size: 1.05rem; font-family: Georgia, 'Times New Roman', serif;}
+.feature-text {color: #89736A; font-size: 0.88rem; line-height: 1.55; margin-top: 0.35rem;}
 .badge {
     display: inline-block; background: #F4E0DA; color: #7E554C; border-radius: 999px;
-    padding: 0.3rem 0.7rem; font-size: 0.75rem; font-weight: 600; margin-right: 0.3rem;
+    padding: 0.3rem 0.75rem; font-size: 0.75rem; font-weight: 600; margin-right: 0.3rem;
 }
 .badge-green {background: #E6EFE5; color: #55704F;}
 .badge-blue {background: #E7EEF2; color: #566D78;}
 .badge-purple {background: #EEE7F2; color: #6E5D78;}
-.stat-card {
-    background: rgba(255,255,255,0.9); border: 1px solid rgba(140,100,90,0.10);
-    border-radius: 20px; padding: 1.1rem; text-align: center;
-    box-shadow: 0 7px 22px rgba(93,60,50,0.05);
+.stat-strip {display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 0.8rem; margin-bottom: 0.5rem;}
+.stat-chip {
+    background: rgba(255,255,255,0.85); border: 1px solid rgba(140,100,90,0.12); border-radius: 18px;
+    padding: 0.9rem 1rem; text-align: center; box-shadow: 0 6px 18px rgba(93,60,50,0.05);
 }
-.stat-number {font-size: 2rem; font-weight: 700; color: #4A3328;}
+.stat-chip b {display: block; font-family: Georgia, 'Times New Roman', serif; font-size: 1.8rem; color: #B77F76;}
+.stat-chip span {color: #8D756A; font-size: 0.78rem;}
+.stat-card {
+    background: rgba(255,255,255,0.9); border: 1px solid rgba(140,100,90,0.12);
+    border-radius: 20px; padding: 1.1rem; text-align: center; box-shadow: 0 7px 22px rgba(93,60,50,0.05);
+}
+.stat-number {font-family: Georgia, 'Times New Roman', serif; font-size: 2rem; font-weight: 700; color: #4A3328;}
 .stat-label {color: #967D72; font-size: 0.8rem; margin-top: 0.15rem;}
 .step {
-    background: #FFFDFC; border: 1px solid #EEDDD7; border-radius: 16px;
+    background: #FFFDFC; border: 1px solid #EEDDD7; border-left: 4px solid #D8A7A0; border-radius: 16px;
     padding: 0.85rem 1rem; margin-bottom: 0.6rem; color: #4A3328;
 }
 .step-desc {color: #927A70; font-size: 0.84rem;}
@@ -252,6 +376,12 @@ p, label {color: #5D463C;}
     background: linear-gradient(135deg, #F5E5DF, #FAF4EF); border-radius: 20px;
     padding: 1.1rem 1.3rem; color: #76594E; font-style: italic; border-left: 4px solid #D8A7A0;
 }
+.bar-row {margin-bottom: 0.75rem;}
+.bar-label {display: flex; justify-content: space-between; font-size: 0.9rem; color: #5D463C; margin-bottom: 0.28rem;}
+.bar-track {height: 11px; border-radius: 999px; background: #F1E4DE; overflow: hidden;}
+.bar-fill {height: 100%; border-radius: 999px; background: linear-gradient(90deg, #EBCBC5, #D8A7A0);}
+.bar-fill.top {background: linear-gradient(90deg, #D8A7A0, #B77F76);}
+.site-footer {margin-top: 3rem; padding: 1.4rem; text-align: center; color: #9B8278; font-size: 0.76rem; line-height: 1.7;}
 </style>
 """)
 
@@ -275,11 +405,19 @@ for key, value in DEFAULTS.items():
 
 @st.cache_resource(show_spinner="KI-Modell wird geladen. Der erste Start kann etwas dauern ...")
 def load_model():
-    from transformers import AutoImageProcessor, AutoModelForImageClassification
+    from transformers import AutoImageProcessor, AutoModelForImageClassification, ViTImageProcessor
 
-    # Der Processor wird direkt aus dem Modell-Repository geladen. Dadurch
-    # verwendet die App genau die dort hinterlegte Bildvorverarbeitung.
-    processor = AutoImageProcessor.from_pretrained(MODEL_ID)
+    try:
+        processor = AutoImageProcessor.from_pretrained(MODEL_ID)
+    except (ValueError, OSError):
+        # Falls das Modell keine Vorverarbeitungs-Datei mitbringt: Standardwerte
+        # eines ViT-Modells (224x224 Pixel, Normalisierung mit 0.5).
+        processor = ViTImageProcessor(
+            do_resize=True,
+            size={"height": 224, "width": 224},
+            image_mean=[0.5, 0.5, 0.5],
+            image_std=[0.5, 0.5, 0.5],
+        )
     model = AutoModelForImageClassification.from_pretrained(MODEL_ID)
     model.eval()
     return processor, model
@@ -347,7 +485,7 @@ def build_report(results):
         "SkinCareApp - Analysebericht",
         datetime.now().strftime("Datum: %d.%m.%Y %H:%M"),
         "",
-        f"Wahrscheinlichstes Merkmal: {top_name} ({top_score:.0%})",
+        f"Wahrscheinlichster Hauttyp: {top_name} ({top_score:.0%})",
         "",
         "Alle Modellwerte:",
     ]
@@ -363,12 +501,13 @@ def build_report(results):
 def page_home():
     html("""
     <div class="hero">
-    <div class="hero-title" style="font-size:2.8rem;">Hallo! 🌸</div>
+    <div class="hero-eyebrow">✦ SKINCARE · KI · LERNPROJEKT</div>
+    <div class="hero-title" style="font-size:3rem;">Hallo, schön dass du da bist 🌸</div>
     <div class="hero-subtitle">
-    Willkommen in deiner persönlichen SkinCare-Welt. Analysiere sichtbare
-    Hautmerkmale, erstelle deine Routine und beobachte deine Hautentwicklung.
+    Willkommen in deiner persönlichen SkinCare-Welt. Finde deinen Hauttyp
+    heraus, erstelle deine Routine und beobachte deine Hautentwicklung.
     </div>
-    <div style="margin-top:1rem;">
+    <div style="margin-top:1.1rem;">
     <span class="badge">KI-Analyse</span>
     <span class="badge badge-green">Pflegeplan</span>
     <span class="badge badge-blue">Tagebuch</span>
@@ -377,9 +516,19 @@ def page_home():
     </div>
     """)
 
-    st.markdown("### Deine SkinCare-Welt")
+    html(f"""
+    <div class="stat-strip">
+    <div class="stat-chip"><b>{len(LABEL_MAP)}</b><span>Hauttypen in der KI</span></div>
+    <div class="stat-chip"><b>{len(PAGES)}</b><span>Bereiche zum Entdecken</span></div>
+    <div class="stat-chip"><b>{len(ACTIVES)}</b><span>Wirkstoffe im Lexikon</span></div>
+    <div class="stat-chip"><b>0</b><span>gespeicherte Fotos</span></div>
+    </div>
+    """)
+
+    divider()
+    section_title("Deine SkinCare-Welt")
     features = [
-        ("🤖", "KI-Hautanalyse", "Selfie hochladen und sichtbare Merkmale analysieren."),
+        ("🤖", "KI-Hautanalyse", "Selfie hochladen und deinen Hauttyp einschätzen."),
         ("🧴", "Pflegeplan", "Deine Morgen- und Abendroutine zum Abhaken."),
         ("📔", "Tagebuch", "Hautzustand und Veränderungen festhalten."),
         ("📊", "Statistik", "Deine Entwicklung als Diagramm."),
@@ -399,8 +548,9 @@ def page_home():
             </div>
             """)
 
+    divider()
     card("""
-    <div style="color:#4A3328; font-size:1.15rem; font-weight:650;">✨ Dein heutiger Fokus</div>
+    <div style="color:#4A3328; font-size:1.2rem; font-weight:650; font-family:Georgia,serif;">✨ Dein heutiger Fokus</div>
     <div style="color:#927A70; margin-top:0.45rem; line-height:1.6;">
     Eine gute Routine muss nicht kompliziert sein. Kleine, regelmäßige Schritte
     sind wichtiger als viele Produkte.
@@ -411,6 +561,7 @@ def page_home():
     """)
     st.info("Tipp: Starte mit der KI-Hautanalyse oder hake deinen Pflegeplan ab.")
 
+
 # ============================================================
 # SEITE: KI-HAUTANALYSE
 # ============================================================
@@ -419,7 +570,7 @@ def page_home():
 def page_analysis():
     hero("🤖 KI-Hautanalyse",
          "Lade ein Selfie hoch oder nutze deine Kamera. Die KI ordnet das Bild "
-         "einem von drei Hauttypen zu.")
+         "einem Hauttyp zu: trocken, normal oder fettig.")
     card("""
     <span class="badge">KI-Analyse</span>
     <span class="badge badge-green">Privatsphäre</span>
@@ -515,11 +666,11 @@ def show_results(results):
                 html(f'<div class="step">🌿 {tip}</div>')
 
     st.markdown("### 📊 Alle Modellwerte")
-    for name, _, score in results:
-        st.progress(min(max(score, 0.0), 1.0), text=f"{name} · {score:.0%}")
+    for position, (name, _, score) in enumerate(results):
+        score_bar(name, score, top=(position == 0))
 
-    st.caption(f"Das Modell wählt eine Kategorie pro Bild. Nicht enthaltene Merkmale sind z. B.: "
-               f"{', '.join(NOT_SUPPORTED)}. Die Werte sind keine medizinischen Messwerte.")
+    st.caption(f"Das Modell bestimmt nur den Hauttyp und wählt eine Kategorie pro Bild. Es erkennt "
+               f"keine Hautprobleme wie {', '.join(NOT_SUPPORTED)}. Die Werte sind keine medizinischen Messwerte.")
     st.download_button("📄 Analysebericht herunterladen (ohne Foto)", build_report(results),
                        file_name="skincare_bericht.txt", mime="text/plain")
 
@@ -820,13 +971,16 @@ def page_about():
     """)
     card(f"""
     <h3>🤖 KI-Modell</h3>
-    <p>Verwendet wird das vortrainierte Hugging-Face-Modell:</p>
-    <span class="badge">{MODEL_ID}</span>
-    <p class="small" style="margin-top:0.8rem;">
-    Das Modell ordnet ein Gesichtsfoto einer von drei Kategorien zu: trockene, normale oder
-    fettige Haut. Laut Model Card erreicht es eine Genauigkeit von 61,61 % auf einem Testdatensatz
-    mit 672 Bildern. Das Modell steht unter der Apache-2.0-Lizenz. Die Ergebnisse können falsch
-    sein und sind keine medizinische Diagnose.
+    <p>Verwendet wird das vortrainierte Hugging-Face-Modell
+    <a href="https://huggingface.co/{MODEL_ID}" target="_blank">{MODEL_ID}</a>.</p>
+    <p class="small">
+    <b>Lizenz:</b> Apache-2.0 (laut Modellseite).<br>
+    <b>Aufgabe:</b> Das Modell ordnet ein Gesichtsfoto einer von drei Kategorien zu:
+    trockene, normale oder fettige Haut.<br>
+    <b>Genauigkeit:</b> 61,61 % auf einem Testdatensatz mit 672 Bildern (Angabe der Modellseite).<br>
+    <b>Grenzen:</b> Es bestimmt nur den Hauttyp und erkennt keine Hautprobleme wie Unreinheiten,
+    Rötungen, Pigmentierung oder Poren. Ergebnisse können falsch sein und sind keine
+    medizinische Diagnose.
     </p>
     """)
     card("""
@@ -855,18 +1009,20 @@ PAGES = {
 }
 
 html("""
-<div style="padding:0.7rem 0 1.2rem 0; text-align:center;">
-<div style="font-size:2rem;">🌸</div>
-<div style="font-size:1.25rem; font-weight:700; color:#4A3328;">SkinCareApp</div>
-<div style="color:#967D72; font-size:0.75rem;">Deine persönliche Skincare-Welt</div>
+<div style="padding:0.6rem 0 1.2rem 0; text-align:center;">
+<div class="logo-badge">🌸</div>
+<div class="logo-name">SkinCareApp</div>
+<div class="logo-tag">DEINE PERSÖNLICHE SKINCARE-WELT</div>
 </div>
 """, sidebar=True)
 
 selected_page = st.sidebar.radio("Navigation", list(PAGES))
 PAGES[selected_page]()
 
+divider()
 html(f"""
-<div style="margin-top:3rem; padding:1.2rem; text-align:center; color:#9B8278; font-size:0.75rem;">
-🌸 SkinCareApp · Schulprojekt · {DISCLAIMER}
+<div class="site-footer">
+🌸 SkinCareApp · Schulprojekt<br>
+{DISCLAIMER}
 </div>
 """)
